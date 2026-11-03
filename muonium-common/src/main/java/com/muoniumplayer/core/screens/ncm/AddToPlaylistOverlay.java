@@ -240,6 +240,7 @@ public class AddToPlaylistOverlay extends NCMPanel {
      */
     private List<PlayList> playListsForSource() {
         List<PlayList> combined = new ArrayList<>(LocalPlaylistStore.list());
+        if (music != null && music.isBvLibrary()) return combined;
         if (music != null && music.isKuGou()) {
             if (!KuGouMusicService.areUserPlaylistsLoaded()) {
                 if (!kuGouCallbackPending) {

@@ -50,6 +50,7 @@ public final class PlaylistCreateSheet extends NcmSheet {
     private TextFieldWidget input;
     /** 非空即「重命名这一张」模式；为 null 时是新建。 */
     private final PlayList renaming;
+    private final Music firstTrack;
     private String statusText = IDLE_TEXT;
     private boolean failed;
     /** 「导入本地文件夹」的选择器在打开中；同一张建单页同一时刻只许一枚系统对话框。 */
@@ -60,7 +61,12 @@ public final class PlaylistCreateSheet extends NcmSheet {
     }
 
     public PlaylistCreateSheet(PlayList renaming) {
+        this(renaming, null);
+    }
+
+    public PlaylistCreateSheet(PlayList renaming, Music firstTrack) {
         this.renaming = renaming;
+        this.firstTrack = firstTrack;
         if (renaming != null) this.statusText = IDLE_TEXT_RENAME;
     }
 
@@ -71,7 +77,8 @@ public final class PlaylistCreateSheet extends NcmSheet {
         final Panel dialog = sheet(452, () -> HEADER_H + FIELD_H + 8 + 26 + FOOTER_H + 16);
         header(dialog, renaming == null ? PartyIcons.ALBUM : PartyIcons.TEXT_FORMAT,
                 renaming == null ? "新建本地歌单" : "重命名本地歌单",
-                () -> renaming == null ? "起个名字就建好 · 之后从任意音源把歌加进来"
+                () -> firstTrack != null ? "将「" + firstTrack.getName() + "」加入新歌单"
+                        : renaming == null ? "起个名字就建好 · 之后从任意音源把歌加进来"
                         : "换一个新名字 · 曲目一首都不动",
                 () -> NCMScreen.getColor(NCMScreen.ColorType.ACCENT));
 
@@ -146,7 +153,7 @@ public final class PlaylistCreateSheet extends NcmSheet {
             importFromLink.setColor(importFromLink.isHovering()
                     ? NCMScreen.getColor(NCMScreen.ColorType.ELEMENT_HOVER)
                     : NCMScreen.getColor(NCMScreen.ColorType.ELEMENT_BACKGROUND));
-            importFromLink.setHidden(renaming != null);
+            importFromLink.setHidden(renaming != null || firstTrack != null);
         });
 
         // 本地文件夹是第三条路：扫磁盘上的音频文件灌成一张单。与「从链接导入」并列——
@@ -162,14 +169,14 @@ public final class PlaylistCreateSheet extends NcmSheet {
             importFromDisk.setColor(importFromDisk.isHovering()
                     ? NCMScreen.getColor(NCMScreen.ColorType.ELEMENT_HOVER)
                     : NCMScreen.getColor(NCMScreen.ColorType.ELEMENT_BACKGROUND));
-            importFromDisk.setHidden(renaming != null);
+            importFromDisk.setHidden(renaming != null || firstTrack != null);
         });
 
         final RoundedButtonWidget confirm = action(dialog, () -> PartyIcons.CHECK,
-                () -> renaming == null ? "新建" : "保存", FontManager.pf12bold,
+                () -> firstTrack != null ? "创建并加入" : (renaming == null ? "新建" : "保存"), FontManager.pf12bold,
                 () -> 0xFFFFFF, this::submit);
         confirm.setBeforeRenderCallback(() -> {
-            double left = renaming == null
+            double left = renaming == null && firstTrack == null
                     ? importFromDisk.getRelativeX() + LOCAL_IMPORT_W + BUTTON_GAP
                     : cancel.getRelativeX() + CANCEL_W + BUTTON_GAP;
             confirm.setBounds(Math.max(1, dialog.getWidth() - (PAD + CARD_INSET) - left), BUTTON_H);
@@ -286,7 +293,7 @@ public final class PlaylistCreateSheet extends NcmSheet {
         }
         final PlayList created;
         try {
-            created = LocalPlaylistStore.create(name);
+            created = LocalPlaylistStore.create(name, firstTrack);
         } catch (Throwable failure) {
             statusText = "建单失败：" + (failure.getMessage() == null || failure.getMessage().trim().isEmpty()
                     ? "本机写入出错" : failure.getMessage().trim());
@@ -294,7 +301,8 @@ public final class PlaylistCreateSheet extends NcmSheet {
             return;
         }
         NCMScreen.getInstance().markDirty();
-        DownloadDynamicIsland.showModelOperationResult("本地歌单", "已新建「" + name + "」", true);
+        DownloadDynamicIsland.showModelOperationResult("本地歌单", firstTrack == null
+                ? "已新建「" + name + "」" : "已将歌曲加入「" + name + "」", true);
         dispose();
         // 建完直接进这张单：空列表配一句提示，比让用户回到侧栏再找它一次要顺。
         NCMScreen.getInstance().setCurrentPanel(new PlaylistPanel(created));

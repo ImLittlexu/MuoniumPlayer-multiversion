@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "forge - Client",
+      "presentation": {
+        "group": "Mod Development - forge",
+        "order": 0
+      },
+      "projectName": "forge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.20.1 recode\\forge\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.20.1 recode\\forge\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmuonium%%E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.20.1 recode\\forge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\forge\\run",
+      "env": {
+        "MOD_CLASSES": "muonium%%E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.20.1 recode\\forge\\bin\\main"
+      },
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    }
+  ]
+}

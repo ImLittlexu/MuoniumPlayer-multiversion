@@ -102,3 +102,8 @@ python tools\share-trees.py classify                     # 共享层体检（只
   - **忽略**：Architectury 章节 —— 本仓库自有共享方案（muonium-common 挂载 + compat 垫片），已论证不迁移。
 - 拿不准 API 名时：先看同树既有 `compat/` 代码，再查 `_mcref/` 反编译参考，最后查 loader 官方文档。
 - 探查类任务先翻 `docs/` 对应实现约定，避免重走已知弯路。
+
+## UI / Layout Guidelines
+
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Rely on intuitive visual hierarchy, grouping, and spacing rather than explanatory microcopy.

@@ -58,7 +58,9 @@ public enum MusicPlatform {
      * <p><b>追加在末尾</b>，理由同 {@link #SMTC}：稳定键按 {@code name()} 落盘，
      * 插进中间会让已落盘的歌词与封面缓存整体错行。</p>
      */
-    LOCAL("本地音乐", 0x6C7A92);
+    LOCAL("本地音乐", 0x6C7A92),
+    GOGO("GOGO娱乐", 0xF19A61),
+    UNM("UNM小站", 0x67B69B);
 
     private final String displayName;
     private final int brandColor;
@@ -67,6 +69,9 @@ public enum MusicPlatform {
         this.displayName = displayName;
         this.brandColor = brandColor;
     }
+
+    /** 两个使用同一 BV/CID 曲库协议的平台。 */
+    public boolean isBvLibrary() { return this == GOGO || this == UNM; }
 
     public String getDisplayName() {
         return displayName;

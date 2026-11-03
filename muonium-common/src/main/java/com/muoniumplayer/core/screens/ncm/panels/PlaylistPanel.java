@@ -250,7 +250,7 @@ public class PlaylistPanel extends NCMPanel {
             this.addChild(btnParty);
             final double[] partyFade = new double[1];
             btnParty.setBeforeRenderCallback(() -> {
-                boolean show = MpPartyClient.playlistSupported();
+                boolean show = MpPartyClient.playlistSupported() && !playList.getPlatform().isBvLibrary();
                 partyFade[0] = Interpolations.interpolate(partyFade[0], show ? 1.0 : 0.0, .3f);
                 boolean visible = partyFade[0] > .04f;
                 btnParty.setClickable(visible);
@@ -887,7 +887,7 @@ public class PlaylistPanel extends NCMPanel {
         }
 
         String secureUrl = coverUrl.replace("http://", "https://");
-        String requestUrl = this.playList.getPlatform() == MusicPlatform.QQ
+        String requestUrl = this.playList.getPlatform() == MusicPlatform.QQ || this.playList.getPlatform().isBvLibrary()
                 ? secureUrl
                 : secureUrl + "?param=256y256";
         Textures.downloadTextureAndLoadAsync(requestUrl, coverLoc);

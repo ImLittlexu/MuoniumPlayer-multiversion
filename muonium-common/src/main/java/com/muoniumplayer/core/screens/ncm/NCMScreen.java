@@ -1316,6 +1316,10 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
 
     /** @param heroFrom 歌曲行那枚「+」在按下那一刻的矩形，飞进弹窗顶部那一行。 */
     public void openAddToPlaylist(Music music, SheetHeroRelay.Origin heroFrom) {
+        if (music != null && music.isBvLibrary() && !com.muoniumplayer.core.ncm.music.LocalPlaylistStore.hasAny()) {
+            openPlaylistSheet(new PlaylistCreateSheet(null, music));
+            return;
+        }
         if (music != null && music.isQQ()) {
             return; // QQ 曲目不可提交到网易云歌单。
         }

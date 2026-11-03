@@ -1322,6 +1322,7 @@ public class CloudMusic implements SharedConstants {
             return PlayPauseResult.RESUMED;
         }
         activePlayer.pause();
+        GogoPlaybackReporter.pause(activePlayer);
         notePlaybackEvent();
         return PlayPauseResult.PAUSED;
     }
@@ -1980,6 +1981,7 @@ public class CloudMusic implements SharedConstants {
                 NeteasePlaybackHistoryReporter.finish(activePlayer,
                         NeteasePlaybackHistoryReporter.EndReason.REPLACED);
                 KuGouPlaybackReporter.finish(activePlayer, KuGouPlaybackReporter.EndReason.REPLACED);
+                GogoPlaybackReporter.finish(activePlayer);
                 if (activePlayer != null && CloudMusic.player == activePlayer) {
                     try {
                         activePlayer.close();
@@ -2396,6 +2398,7 @@ public class CloudMusic implements SharedConstants {
                 }
                 NeteasePlaybackHistoryReporter.observe(activePlayer);
                 KuGouPlaybackReporter.observe(activePlayer);
+                GogoPlaybackReporter.observe(activePlayer);
                 // 播放记忆心跳：store 内部按 15s 去抖，绝大多数 tick 是一次墙钟比较就返回。
                 CloudMusic.noteHeartbeatForResume();
 
@@ -2472,6 +2475,7 @@ public class CloudMusic implements SharedConstants {
             NeteasePlaybackHistoryReporter.finish(completedPlayer,
                     NeteasePlaybackHistoryReporter.EndReason.COMPLETED);
             KuGouPlaybackReporter.finish(completedPlayer, KuGouPlaybackReporter.EndReason.COMPLETED);
+                GogoPlaybackReporter.finish(completedPlayer);
 
             if (!dontAdd && playedFrom != null && curIdx >= 0 && curIdx < playList.size()) {
                 playList.get(curIdx).updPlayCount(playedFrom, completedPlayer.getCurrentTimeSeconds());
@@ -2586,6 +2590,7 @@ public class CloudMusic implements SharedConstants {
             warmAdvancedEnvelope(activePlayer);
             NeteasePlaybackHistoryReporter.start(song, currentPlaylistContext, activePlayer);
             KuGouPlaybackReporter.start(song, activePlayer);
+            GogoPlaybackReporter.start(song, activePlayer);
             QishuiPlaybackReporter.start(song, currentPlaylistContext);
             final AudioPlayer callbackPlayer = activePlayer;
             callbackPlayer.setAfterPlayed(() -> {
@@ -2676,6 +2681,7 @@ public class CloudMusic implements SharedConstants {
          */
         private static String audioCachePrefix(Music song) {
             return song.getStableKey() + "_"
+                    + (song.isBvLibrary() ? GogoAudioResolver.locatorKey(song) + "_" : "")
                     + (song.isKuGou() ? KuGouMusicApi.AUDIO_CACHE_EPOCH : "")
                     + (song.isQishui() ? QishuiMusicService.audioCacheEpoch() + "_" : "")
                     + (song.isApple() && song.isApplePreviewOnly() ? "pv_" : "");
@@ -2745,6 +2751,10 @@ public class CloudMusic implements SharedConstants {
                 throw new IllegalStateException("Unable to create music cache directory: " + musicCacheDir.getAbsolutePath());
             }
 
+            if (song != null && song.isBvLibrary() && downloadIfMissing) {
+                try { GogoMusicService.ensureLocator(song); }
+                catch (IOException failure) { throw new IllegalStateException(song.getSource().getDisplayName() + "曲目资料获取失败", failure); }
+            }
             String cacheKey = audioCacheKey(song, quality.getQuality());
             File cachedMusic = AudioCacheFiles.findCachedAudioFile(musicCacheDir, cacheKey, type);
             if (cachedMusic != null) {
@@ -2755,6 +2765,13 @@ public class CloudMusic implements SharedConstants {
             }
             if (!downloadIfMissing) {
                 return null;
+            }
+
+            if (song != null && song.isBvLibrary()) {
+                File file = GogoAudioResolver.ensureAudio(song, musicCacheDir, cacheKey);
+                MusicAudioCache.touch(file);
+                MusicAudioCache.enforceLimitAsync();
+                return file;
             }
 
             // Apple 完整版兑换：伪 URL 不指向网络资源，完整版由本机管线产出到缓存键位上。
@@ -4696,6 +4713,7 @@ public class CloudMusic implements SharedConstants {
                 }
                 try {
                     KuGouPlaybackReporter.finish(outgoing, KuGouPlaybackReporter.EndReason.COMPLETED);
+                GogoPlaybackReporter.finish(outgoing);
                 } catch (Throwable ignored) {
                 }
                 if (!dontAdd && playedFrom != null && curIdx >= 0 && curIdx < playList.size()) {
@@ -4770,6 +4788,7 @@ public class CloudMusic implements SharedConstants {
             if (selection != null) warmAdvancedEnvelope(incoming);
             NeteasePlaybackHistoryReporter.start(track.song, currentPlaylistContext, incoming);
             KuGouPlaybackReporter.start(track.song, incoming);
+            GogoPlaybackReporter.start(track.song, incoming);
             QishuiPlaybackReporter.start(track.song, currentPlaylistContext);
             // 无缝交接同样是"一首 FM 曲目开始出声"，面板与预备标记都要跟着走。
             if (personalFmActive) PersonalFmManager.noteFmTrackStarted(track.song);

@@ -334,7 +334,7 @@ public final class CrossSourceSwitcher {
         if (current.isDjProgram()) return false;
         // 本地文件永不换源：取流失败意味着文件没了/坏了，换一个在线平台的同名歌
         // 就是「用户没点过的歌在放」，比报错糟得多。LOCAL 也不在候选表里，双向都堵死。
-        if (current.isLocal()) return false;
+        if (current.isLocal() || current.isBvLibrary()) return false;
         if (!SwitchSourceSettings.isEnabled()) return false;
         if (candidatePlatforms(current.getSource()).isEmpty()) return false;
         // 一起听 / party 房间按曲目本体同步，本地悄悄换一首就是整房脱队。

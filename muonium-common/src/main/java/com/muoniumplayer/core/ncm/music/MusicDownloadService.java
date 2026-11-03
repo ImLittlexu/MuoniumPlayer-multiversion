@@ -47,6 +47,11 @@ final class MusicDownloadService {
         // 一些 CDN 拒绝匿名请求（Bilibili 在没有浏览器
         //User-Agent 加 bilibili Referer 时应答 403），因此主机特定头随传输一起发送。
         Map<String, String> streamHeaders = AudioStreamHeaders.forUrl(playUrl);
+        if (song != null && song.isBvLibrary() && !playUrl.startsWith("https://cdn.eoes.cc/")
+                && !playUrl.startsWith("https://bilibili-audio-proxy-zone-")) {
+            streamHeaders = Map.of("User-Agent", "Mozilla/5.0", "Referer",
+                    "https://www.bilibili.com/video/" + song.getGogoBvid() + "/");
+        }
         // 房间的提前下载：不碰 musicInfo.downloading（那是当前曲目的下载进度面板的数据源），
         // 也不弹下载卡片。见 CloudMusic#quietDownload 为什么必须按线程记。
         final boolean quiet = CloudMusic.quietDownload();

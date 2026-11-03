@@ -123,6 +123,10 @@ public class HomePanel extends NCMPanel {
 
     @Override
     public void onInit() {
+        if (platform.isBvLibrary() && fixedPlaylists == null) {
+            NCMScreen.getInstance().replaceCurrentPanel(new GogoLibraryPanel(platform));
+            return;
+        }
         if (fixedPlaylists != null) {
             layout(fixedPlaylists, fixedRecommendationTitle == null || fixedRecommendationTitle.trim().isEmpty()
                     ? "歌单搜索" : fixedRecommendationTitle);

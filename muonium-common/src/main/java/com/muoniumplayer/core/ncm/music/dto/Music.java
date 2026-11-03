@@ -131,6 +131,9 @@ public class Music {
     /** 跨平台字段。旧网易云 JSON 不包含这些字段时会自然回退到 NETEASE + 数字 id。 */
     private transient MusicPlatform source = MusicPlatform.NETEASE;
     private transient String sourceId;
+    private transient String gogoBvid = "";
+    private transient String gogoCid = "";
+    private transient String gogoAudioRoute = "";
     private transient String sourceMid;
     private transient String externalCoverUrl;
     /**
@@ -765,6 +768,8 @@ public class Music {
                 album, duration, featureFlag, publishTime, translatedName);
         copy.source = source;
         copy.sourceId = sourceId;
+        copy.gogoBvid = gogoBvid;
+        copy.gogoCid = gogoCid;
         copy.sourceMid = sourceMid;
         copy.gdPlatform = gdPlatform;
         copy.gdPicId = gdPicId;
@@ -889,6 +894,10 @@ public class Music {
     public boolean isYouTube() {
         return getSource() == MusicPlatform.YOUTUBE;
     }
+
+    public boolean isGogo() { return getSource() == MusicPlatform.GOGO; }
+
+    public boolean isBvLibrary() { return getSource().isBvLibrary(); }
 
     public boolean isBilibili() {
         return getSource() == MusicPlatform.BILIBILI;
@@ -1119,6 +1128,9 @@ public class Music {
     }
 
     private Tuple<String, String> resolvePlayUrl() {
+        if (isBvLibrary()) {
+            return new Tuple<>(com.muoniumplayer.core.ncm.music.GogoAudioResolver.prefix(getSource()) + getSourceId(), "mp4");
+        }
         // 绝不显示从上一次失败解析带过来的质量徽标。
         this.playbackQuality = PlaybackQuality.UNKNOWN;
 

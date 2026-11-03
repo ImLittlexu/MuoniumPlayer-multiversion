@@ -135,6 +135,7 @@ public final class NeteaseMusicService {
     }
 
     public static List<Music> search(String keyword, int limit) {
+        if (getCurrentPlatform().isBvLibrary()) return searchGogo(getCurrentPlatform(), keyword);
         if (isBlank(keyword)) {
             return Collections.emptyList();
         }
@@ -298,7 +299,13 @@ public final class NeteaseMusicService {
      * 在不改变可见提供方的前提下，执行一次调用方选定的官方提供方搜索。
      * 仅用于调用方显式选择的平台。
      */
+    private static List<Music> searchGogo(MusicPlatform platform, String keyword) {
+        try { return GogoMusicService.songs(platform, keyword, "", "", "createdAt", "desc", 1).items; }
+        catch (java.io.IOException failure) { throw new IllegalStateException(platform.getDisplayName() + "搜索失败", failure); }
+    }
+
     public static List<Music> search(MusicPlatform platform, String keyword, int limit) {
+        if (platform != null && platform.isBvLibrary()) return searchGogo(platform, keyword);
         if (isBlank(keyword) || platform == null) return Collections.emptyList();
         if (platform == MusicPlatform.KUGOU) return KuGouMusicService.search(keyword, limit);
         if (platform == MusicPlatform.YOUTUBE) return searchYouTube(keyword, limit);
@@ -473,6 +480,7 @@ public final class NeteaseMusicService {
 
     /** 在不改动全局偏好的前提下，按显式档位解析一次内置音源层流尝试。 */
     public static Tuple<String, String> getSongUrl(Music music, Quality requestedQuality) {
+        if (music != null && music.isBvLibrary()) return music.getPlayUrl();
         if (music == null) return null;
         if (music.isYouTube()) {
             Quality effectiveQuality = requestedQuality == null ? Quality.LOSSLESS : requestedQuality;
@@ -556,6 +564,7 @@ public final class NeteaseMusicService {
     }
 
     public static Lyric getLyric(Music music) {
+        if (music != null && music.isBvLibrary()) return null;
         if (music == null) return null;
         if (music.isBilibili()) {
             // B 站的「歌词」就是播放器字幕，且未登录时上游恒返回空清单。

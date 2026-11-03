@@ -201,7 +201,9 @@ public class PlayList {
     private void queryMusics() {
         try {
             List<Music> loadedMusics;
-            if (getPlatform() == MusicPlatform.QQ) {
+            if (getPlatform().isBvLibrary()) {
+                loadedMusics = com.muoniumplayer.core.ncm.music.GogoMusicService.playlistSongs(getPlatform(), getPlatformPlaylistId());
+            } else if (getPlatform() == MusicPlatform.QQ) {
                 // QQ 的歌单 id 是字符串 dissid/tid，并且曲目对象需要保留 QQ source/mid。
                 loadedMusics = NeteaseMusicService.getQQPlaylistTracks(
                         getPlatformPlaylistId(), Math.max(100, count > 0 ? count : 100));

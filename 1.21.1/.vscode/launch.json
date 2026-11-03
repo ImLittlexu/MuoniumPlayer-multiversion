@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "neoforge - Client",
+      "presentation": {
+        "group": "Mod Development - neoforge",
+        "order": 0
+      },
+      "projectName": "neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.21.1\\neoforge\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.21.1\\neoforge\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmuonium%%E:\\MCProject\\Mods\\MuoniumPlayer-multiversion\\1.21.1\\neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\neoforge\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    }
+  ]
+}

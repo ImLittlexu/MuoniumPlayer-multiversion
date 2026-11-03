@@ -44,6 +44,11 @@ public final class LocalPlaylistStore {
 
     /** 建一张空的本地歌单并立刻落盘。重名不拦：用户想要两张都叫「跑步」的单子是合理需求。 */
     public static PlayList create(String name) {
+        return create(name, null);
+    }
+
+    /** 建单与第一首歌曲一起落盘，避免新用户先建空单再重新找歌。 */
+    public static PlayList create(String name, Music firstTrack) {
         String title = name == null ? "" : name.trim();
         if (title.isEmpty()) {
             throw new IllegalArgumentException("歌单名不能为空");
@@ -52,11 +57,12 @@ public final class LocalPlaylistStore {
         long id = nextId();
         // 8 个参数是 PlayList 的 @RequiredArgsConstructor：id、名字、封面、曲目数、播放数、
         // 创建者、描述、创建时间。本地单没有封面（用第一首歌的专辑封面顶上），也没有创建者。
-        PlayList playlist = new PlayList(id, title, "", 0, 0L, null, "", System.currentTimeMillis());
+        PlayList playlist = new PlayList(id, title, "", firstTrack == null ? 0 : 1, 0L, null, "", System.currentTimeMillis());
         playlist.setPlatform(MusicPlatform.NETEASE);
         playlist.setPlatformPlaylistId("local:" + id);
         playlist.setLocalPlaylist(true);
         playlist.musics = new CopyOnWriteArrayList<>();
+        if (firstTrack != null) playlist.musics.add(firstTrack);
         // 这两个标志位是仓库里现成的「曲目已经在手上，别再回上游拉」的写法（见 searchMode 那条路径）：
         // getMusics / loadMusicsWithCallback 会在它们面前早返回，queryMusics 整条链根本不会被调到。
         playlist.musicsQueried = true;
@@ -278,6 +284,10 @@ public final class LocalPlaylistStore {
         JsonObject x = new JsonObject();
         MusicPlatform source = music.getSource();
         x.addProperty("source", source == null ? "" : source.name().toLowerCase(Locale.ROOT));
+        if (music.isBvLibrary()) {
+            addIfPresent(x, "gogoBvid", music.getGogoBvid());
+            addIfPresent(x, "gogoCid", music.getGogoCid());
+        }
         // getSourceId() 在源没给 sourceId 时会退化成 String.valueOf(id)。那不是一个真键：
         // 把它当 sourceId 存下来，读回来就成了「这首歌有 sourceId」的假事实，而下游那些
         // 「先按 sourceId 问」的链路（歌词、封面）会拿着网易云的编号去问别的平台。
@@ -320,6 +330,8 @@ public final class LocalPlaylistStore {
         music.setSource(resolvePlatform(string(x, "source")));
         music.setSourceId(string(x, "sourceId"));
         music.setSourceMid(string(x, "sourceMid"));
+        music.setGogoBvid(string(x, "gogoBvid"));
+        music.setGogoCid(string(x, "gogoCid"));
         music.setExternalCoverUrl(string(x, "cover"));
         music.setGdPlatform(string(x, "gdPlatform"));
         music.setGdPicId(string(x, "gdPicId"));

@@ -283,7 +283,7 @@ public final class MusicSourceOverlay extends NcmSheet {
                 cell -> officialCell(cell, 7, MusicPlatform.APPLE),
                 this::gdCell);
         // 第十格（LX）独占一行行首：空出的两格是隐形 Panel，不画任何东西。
-        gridRow(feed, 3, this::lxCell, cell -> { }, cell -> { });
+        gridRow(feed, 3, this::lxCell, cell -> officialCell(cell, 10, MusicPlatform.GOGO), cell -> officialCell(cell, 11, MusicPlatform.UNM));
 
         settingsRow(dialog);
         tip(dialog, () -> "GD音乐台来源由 music-api.gdstudio.xyz 提供，请遵循上游服务的使用要求",
@@ -576,6 +576,8 @@ public final class MusicSourceOverlay extends NcmSheet {
             case QISHUI -> MusicBrandIcons.QISHUI_MONOGRAM;
             case SPOTIFY -> MusicBrandIcons.SPOTIFY_MONOGRAM;
             case APPLE -> MusicBrandIcons.APPLE_MONOGRAM;
+            case GOGO -> "G";
+            case UNM -> "U";
             default -> MusicBrandIcons.NETEASE_CLOUD_MUSIC;
         };
     }
@@ -583,7 +585,7 @@ public final class MusicSourceOverlay extends NcmSheet {
     /** 品牌字形的兜底字体。酷狗/哔哩/汽水/Spotify/Apple 用正文字体画一枚字符字标。 */
     private CFontRenderer brandFont(final MusicPlatform platform) {
         return switch (platform) {
-            case KUGOU, BILIBILI, QISHUI, SPOTIFY, APPLE -> FontManager.pf34bold;
+            case KUGOU, BILIBILI, QISHUI, SPOTIFY, APPLE, GOGO, UNM -> FontManager.pf34bold;
             case YOUTUBE -> FontManager.youtubeIcon34;
             case QQ -> FontManager.qqMusicIcon68;
             default -> FontManager.musicBrand52;
@@ -2104,6 +2106,7 @@ public final class MusicSourceOverlay extends NcmSheet {
     }
 
     private String accountLine(final MusicPlatform platform) {
+        if (platform.isBvLibrary()) return "公开曲库与歌单";
         if (platform == MusicPlatform.YOUTUBE) {
             return "无需登录 · 搜索并播放 YouTube 音频";
         }

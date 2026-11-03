@@ -172,7 +172,7 @@ public class MusicWidget extends RoundedRectWidget {
             } else if (i == 1) {
                 // 右键 = 手动换源。流水线全在后台线程跑，结果回投主线程替换列表里的这一格；
                 // 同一首歌在结果回来之前的重复右键会被服务层的 in-flight 账吃掉。
-                CrossSourceSwitcher.requestManualSwitch(this.music, playList, index);
+                if (!music.isBvLibrary()) CrossSourceSwitcher.requestManualSwitch(this.music, playList, index);
             } else if (i == 2) {
                 // 中键 = 给这一行手动选词。右键已经被换源占了，这套 UI 框架里也没有行级上下文菜单，
                 // 中键是唯一一处不会和任何已有手势打架的按键（鼠标按键 0/1 之外没人用过）。
@@ -544,7 +544,7 @@ public class MusicWidget extends RoundedRectWidget {
 
         String albumName = music.getAlbum() == null || music.getAlbum().getName() == null
                 ? "未知专辑" : music.getAlbum().getName();
-        LabelWidget lblMusicArtist = new LabelWidget(music.getArtistsName() + " - " + albumName, FontManager.pf14);
+        LabelWidget lblMusicArtist = new LabelWidget(music.isBvLibrary() ? music.getArtistsName() : music.getArtistsName() + " - " + albumName, FontManager.pf14);
         this.addChild(lblMusicArtist);
 
         lblMusicArtist
@@ -564,7 +564,7 @@ public class MusicWidget extends RoundedRectWidget {
         // 第三方源在搜索响应中不返回时长；时长是在
         // 解码过程中测量的，因此标签实时读取该值，而不是在构建时固定为 00:00。
         LabelWidget lblMusicDuration = new LabelWidget(
-                () -> formatDuration(music.getDuration()), FontManager.pf14bold);
+                () -> music.isBvLibrary() ? "" : formatDuration(music.getDuration()), FontManager.pf14bold);
         this.addChild(lblMusicDuration);
         lblMusicDuration.setBeforeRenderCallback(() -> {
             if (displaySelected)
@@ -676,7 +676,7 @@ public class MusicWidget extends RoundedRectWidget {
      * 所以只要用户手上有一张本地单，这颗按钮对他就是有效的，不该因为当前源不支持云端歌单就藏掉。</p>
      */
     private static boolean canAddToPlaylist(Music music) {
-        return music != null && (music.isNetease() || music.isKuGou() || LocalPlaylistStore.hasAny());
+        return music != null && (music.isNetease() || music.isKuGou() || music.isBvLibrary() || LocalPlaylistStore.hasAny());
     }
 
     /**
