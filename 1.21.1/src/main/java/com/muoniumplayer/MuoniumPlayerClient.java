@@ -20,7 +20,6 @@ import com.muoniumplayer.core.screens.ncm.NCMScreen;
 import com.muoniumplayer.core.screens.hud.OneConfigHudBridge;
 import com.muoniumplayer.core.settings.HudConfig;
 import com.muoniumplayer.core.screens.ncm.IslandSearchOverlay;
-import com.muoniumplayer.core.utils.KeyboardUtils;
 import com.muoniumplayer.core.update.AnnouncementChecker;
 import com.muoniumplayer.core.update.UpdateChecker;
 import com.muoniumplayer.core.screens.RenderLayerNotice;
@@ -94,9 +93,9 @@ public final class MuoniumPlayerClient {
 
     // ==================== 可配置按键绑定 ====================
     // 由 createKeyMappings() 构造、由各加载器注册；tick 里只读。
-    /** 打开网易云音乐主界面，默认右 Shift。可在「选项 → 控制」中修改。 */
+    /** 打开音乐主界面，默认 ]。可在「选项 → 控制」中修改。 */
     public static KeyMapping keyOpenMusic;
-    /** 打开 HUD 位置/缩放编辑器，默认 H。可在「选项 → 控制」中修改。 */
+    /** 打开 HUD 位置/缩放编辑器，默认反引号键（与 ~ 同键）。可在「选项 → 控制」中修改。 */
     public static KeyMapping keyEditHud;
     /** 切换到上一曲，默认 Page Up。可在「选项 → 控制」中修改。 */
     public static KeyMapping keyPreviousTrack;
@@ -108,7 +107,7 @@ public final class MuoniumPlayerClient {
     public static KeyMapping keyVolumeDown;
     /** 暂停 / 继续播放，默认数字键盘 *。可在「选项 → 控制」中修改。 */
     public static KeyMapping keyTogglePause;
-    /** 游戏内唤出灵动岛搜索栏，默认 Ctrl+F（见 onClientTick 里的修饰键说明）。 */
+    /** 游戏内唤出灵动岛搜索栏，默认未绑定，可在按键设置中绑定。 */
     public static KeyMapping keyQuickSearch;
     /** 立即按当前环境切一首（环境选曲手动入口），默认不占键位，需玩家自行绑定。 */
     public static KeyMapping keyAmbientNow;
@@ -125,17 +124,17 @@ public final class MuoniumPlayerClient {
     }
 
     /**
-     * 构造七个可重绑定按键（不注册）。
+     * 构造九个可重绑定按键（不注册）。
      *
      * <p>默认值仍写作 {@code Keyboard.KEY_*}（LWJGL2 码值），构造时用
-     * {@link Keyboard#toGlfw(int)} 翻成 GLFW 码值，这样默认键位与 1.8.9 一模一样。
+     * {@link Keyboard#toGlfw(int)} 转换为当前版本使用的键码。
      *
      * <p>幂等：重复调用会重新构造并覆盖静态字段，方便 NeoForge 在
      * {@code RegisterKeyMappingsEvent} 里按需取用。
      */
     public static List<KeyMapping> createKeyMappings() {
-        keyOpenMusic = key("key.muonium.open_music", Keyboard.KEY_RSHIFT);
-        keyEditHud = key("key.muonium.edit_hud", Keyboard.KEY_H);
+        keyOpenMusic = key("key.muonium.open_music", Keyboard.KEY_RBRACKET);
+        keyEditHud = key("key.muonium.edit_hud", Keyboard.KEY_GRAVE);
         // Page Up / Page Down 避开原版移动与物品栏按键，
         // 同时仍可在「选项 → 控制」中完全重绑定。
         keyPreviousTrack = key("key.muonium.previous_track", Keyboard.KEY_PRIOR);
@@ -144,9 +143,8 @@ public final class MuoniumPlayerClient {
         keyVolumeDown = key("key.muonium.volume_down", Keyboard.KEY_SUBTRACT);
         // 和音量的小键盘 +/- 放在一起，构成一组「媒体键」；原版没有占用小键盘 *，因此默认不冲突。
         keyTogglePause = key("key.muonium.toggle_pause", Keyboard.KEY_MULTIPLY);
-        // 快捷搜索默认 F；绑定仍是默认键时由 tick 里要求 Ctrl 一起按下（即 Ctrl+F），
-        // 玩家改绑其它键后直接触发，不再要求修饰键。
-        keyQuickSearch = key("key.muonium.quick_search", Keyboard.KEY_F);
+        // 快捷搜索默认未绑定，避免占用原版切换副手的 F 键。
+        keyQuickSearch = key("key.muonium.quick_search", Keyboard.KEY_NONE);
         // 环境选曲手动切换：默认不占键位（KEY_NONE），想要键位的玩家在控制设置里自行绑定。
         keyAmbientNow = key("key.muonium.ambient_now", Keyboard.KEY_NONE);
         return List.of(keyOpenMusic, keyEditHud, keyPreviousTrack, keyNextTrack,
@@ -258,7 +256,7 @@ public final class MuoniumPlayerClient {
         // 重启上限、拿不到启动命令等安全阀都在 GameRestart 内部，这里一次布尔判断。
         com.muoniumplayer.core.update.GameRestart.tick(mc::stop, mc.level == null);
 
-        // ---- 【只给开发验证】一个文件等价于按一次右 Shift ----
+        // ---- 【只给开发验证】一个文件等价于打开一次播放器 ----
         // 自动化环境里合成按键驱动不了 KeyMapping（要等 tick 循环里的 consumeClick），
         // 而首启的覆盖层与引导必须真的开出来才看得到效果。这条只补「按那一下」，
         // 走的还是同一个 OnboardingManager.openPlayerEntry()，不绕任何状态闸；文件用完即删。
@@ -337,12 +335,9 @@ public final class MuoniumPlayerClient {
                 MusicHotkeys.togglePlayback();
             }
 
-            // 灵动岛快捷搜索：默认 Ctrl+F。绑定还是默认键（F）时要求 Ctrl 按下 ——
-            // 光杆 F 太容易误触；改绑其它键后直接触发。
+            // 仅响应玩家自行设置的快捷搜索键，不附加隐藏的 Ctrl 条件。
             if (keyQuickSearch.consumeClick()) {
-                if (!isDefaultBinding(keyQuickSearch) || KeyboardUtils.isCtrlKeyDown()) {
-                    IslandSearchOverlay.toggle();
-                }
+                IslandSearchOverlay.toggle();
             }
 
             // 环境选曲手动切换：默认不占键位，绑了才触发；动作与灵动岛反馈都在 MusicHotkeys 里。
@@ -361,18 +356,6 @@ public final class MuoniumPlayerClient {
             keyTogglePause.consumeClick();
             keyQuickSearch.consumeClick();
             keyAmbientNow.consumeClick();
-        }
-    }
-
-    /**
-     * 这个按键此刻是否仍是出厂绑定。读 {@code KeyMapping#isDefault()}；
-     * 异常时按「是默认」处理 —— 宁可多要求一次 Ctrl，也不会让改绑后的键失灵。
-     */
-    private static boolean isDefaultBinding(KeyMapping mapping) {
-        try {
-            return mapping.isDefault();
-        } catch (Throwable ignored) {
-            return true;
         }
     }
 
@@ -550,7 +533,7 @@ public final class MuoniumPlayerClient {
     }
 
     /**
-     * 【只给开发验证】存在 {@code config/muonium/dev_open_player} 就等价于按了一次右 Shift。
+     * 【只给开发验证】存在 {@code config/muonium/dev_open_player} 就等价于打开了一次播放器。
      *
      * <p>见 {@link com.muoniumplayer.core.settings.ConfigPaths#DEV_OPEN_PLAYER} 的注释：
      * 自动化环境驱动不了 {@code KeyMapping}，而覆盖层与引导只有真的开出来才看得见。

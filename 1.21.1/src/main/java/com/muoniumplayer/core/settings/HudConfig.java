@@ -648,7 +648,7 @@ public final class HudConfig {
     public static boolean glassSurfacePlayer = true;
     /** 真玻璃生效在顶部灵动岛上。岛面积小，折射读不出来，主要吃的是背景透色与边缘光。 */
     public static boolean glassSurfaceIsland = true;
-    /** 游戏内 Ctrl+F 从灵动岛长出的快捷搜索栏。关掉后快捷键不再响应。 */
+    /** 灵动岛快捷搜索栏；按键默认未绑定，关掉后已绑定的快捷键也不再响应。 */
     public static boolean islandSearchEnabled = true;
     /** 真玻璃生效在桌面歌词卡片上。 */
     public static boolean glassSurfaceDesktopLyric = true;

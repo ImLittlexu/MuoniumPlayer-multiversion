@@ -28,7 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 灵动岛快捷搜索栏：游戏内 Ctrl+F（可改键）从灵动岛长出的搜索胶囊。
+ * 灵动岛快捷搜索栏：通过玩家自行绑定的快捷键从灵动岛长出的搜索胶囊。
  *
  * <p>这是一个<b>全透明</b>的 Screen：{@code drawScreen} 不画任何背景暗幕（先例：
  * CoverflowOverlay / GuiHudEditor），游戏画面照常可见，{@code doesGuiPauseGame()} 为 false

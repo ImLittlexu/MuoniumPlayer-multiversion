@@ -432,7 +432,7 @@ public final class ConfigPaths {
     public static final File INTRO_CAPTURE = new File(CONFIG_DIRECTORY, "intro_capture.png");
 
     /**
-     * 【只给开发验证】存在就在下一个 tick 等价于「按了一次右 Shift」，文件本身随即被删掉。
+     * 【只给开发验证】存在就在下一个 tick 等价于「打开一次播放器」，文件本身随即被删掉。
      *
      * <p>自动化环境里合成按键驱动不了 {@code KeyMapping}（那一类要等 tick 循环里的
      * {@code consumeClick()}，实测 vanilla 的 E 与 Esc 同样收不到），而覆盖层与引导的视觉验证

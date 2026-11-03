@@ -1259,7 +1259,7 @@ public final class HudSettingsModel {
                                         () -> HudConfig.dynamicIslandEnabled),
                                 slider(HudSetting.DYNAMIC_ISLAND_PROGRESS_HEIGHT, "下载进度条的粗细。",
                                         () -> HudConfig.dynamicIslandEnabled),
-                                toggle("岛内搜索", "游戏里按 Ctrl+F 直接搜歌，按键可以在键位设置里改。",
+                                toggle("岛内搜索", "在按键设置中绑定快捷搜索键后，可在游戏里直接搜歌。",
                                         new BooleanSupplier() {
                                             public boolean getAsBoolean() {
                                                 return HudConfig.islandSearchEnabled;
@@ -1598,7 +1598,7 @@ public final class HudSettingsModel {
                                         () -> HudConfig.spectrumEnabled)),
                         new Group("设置界面", HudSettingsIcons.MODERN_UI,
                                 choice("设置界面由谁渲染", "内置＝本项目自绘的界面；OneConfig / ModernUI＝交给已安装的外部界面。"
-                                        + "选中的外部界面不可用时自动回退内置，不报错也不弹提示，切换在下次按 H 时生效。",
+                                        + "选中的外部界面不可用时自动回退内置，不报错也不弹提示，切换在下次打开 HUD 编辑器时生效。",
                                         new Supplier<String>() {
                                             public String get() {
                                                 return uiLayerLabel();
