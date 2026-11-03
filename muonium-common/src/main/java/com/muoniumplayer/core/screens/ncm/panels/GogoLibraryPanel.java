@@ -13,6 +13,7 @@ import com.muoniumplayer.core.rendering.ui.container.ScrollPanel;
 import com.muoniumplayer.core.rendering.ui.widgets.*;
 import com.muoniumplayer.core.screens.ncm.NCMPanel;
 import com.muoniumplayer.core.screens.ncm.NCMScreen;
+import com.muoniumplayer.core.screens.ncm.NCMTheme;
 import com.muoniumplayer.core.utils.other.multithreading.MultiThreadingUtil;
 import java.util.*;
 import java.util.function.*;
@@ -311,6 +312,8 @@ public final class GogoLibraryPanel extends NCMPanel {
     ++revision;
     loading = false;
     content.getChildren().clear();
+    content.actualScrollOffset = 0;
+    content.targetScrollOffset = 0;
     for (int i = 0; i < labels.size(); i++) {
       final String key = keys.get(i), title = labels.get(i);
       button(
@@ -426,18 +429,22 @@ public final class GogoLibraryPanel extends NCMPanel {
       Runnable action,
       BooleanSupplier selected) {
     RoundedButtonWidget button = new RoundedButtonWidget(text, FontManager.pf12);
+    button.setBounds(1, 26);
     parent.addChild(button);
     button.setBeforeRenderCallback(
         () -> {
-          button.setBounds(x.getAsDouble(), y.getAsDouble(), width.getAsDouble(), 26).setRadius(5);
+          // 滚动容器负责行位置；按钮只更新尺寸，不能把排列后的 Y 改回 0。
+          if (parent instanceof ScrollPanel) button.setBounds(width.getAsDouble(), 26);
+          else button.setBounds(x.getAsDouble(), y.getAsDouble(), width.getAsDouble(), 26);
+          button.setRadius(5);
           button.setColor(
-              NCMScreen.getColor(
+              NCMTheme.getColor(
                   selected.getAsBoolean()
                       ? NCMScreen.ColorType.ACCENT
                       : button.isHovering()
                           ? NCMScreen.ColorType.ELEMENT_HOVER
                           : NCMScreen.ColorType.ELEMENT_BACKGROUND));
-          button.setTextColor(NCMScreen.getColor(NCMScreen.ColorType.PRIMARY_TEXT));
+          button.setTextColor(NCMTheme.getColor(NCMScreen.ColorType.PRIMARY_TEXT));
         });
     button.setOnClickCallback(
         (mx, my, mouse) -> {

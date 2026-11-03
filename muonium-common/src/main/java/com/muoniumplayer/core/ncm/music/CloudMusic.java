@@ -148,6 +148,7 @@ public class CloudMusic implements SharedConstants {
     public static volatile String lyricsTrackKey = null;
     /** Increments on timeline publication/clear, including reloading the same song. */
     public static volatile long lyricsRevision;
+    private static volatile JsonObject bvLibraryLyricInfo;
 
     /**
      * 当前提交的歌词时间轴是否真的属于正在出声的那首歌。
@@ -5435,6 +5436,14 @@ public class CloudMusic implements SharedConstants {
 
     public static void initLyrics(JsonObject rawLyricData, Music music, List<LyricLine> parsedLyrics) {
         resetLyricFlags();
+        bvLibraryLyricInfo = rawLyricData != null && rawLyricData.has(BvLibraryLyricService.METADATA)
+                ? rawLyricData.getAsJsonObject(BvLibraryLyricService.METADATA) : null;
+        if (bvLibraryLyricInfo != null) {
+            AudioPlayer lyricPlayer = currentSession != null ? currentSession.player : player;
+            long duration = lyricPlayer != null ? Math.round(lyricPlayer.getTotalTimeMillis())
+                    : (music == null ? 0L : music.getDuration());
+            BvLibraryLyricService.completeLastLine(rawLyricData, parsedLyrics, duration);
+        }
         if (rawLyricData != null) {
             detectTranslations(rawLyricData);
         }
@@ -6013,6 +6022,15 @@ public class CloudMusic implements SharedConstants {
     public static int getServedLyricSource() {
         Music current = currentlyPlaying;
         return current == null ? -1 : LyricLoadService.servedSource(current.getStableKey());
+    }
+
+    public static boolean hasAiSubtitleLyrics() {
+        return lyricsMatchCurrentTrack() && BvLibraryLyricService.isAi(bvLibraryLyricInfo);
+    }
+
+    public static String getLyricDisclaimer() {
+        return lyricsMatchCurrentTrack() && bvLibraryLyricInfo != null
+                ? GogoMusicService.text(bvLibraryLyricInfo, "disclaimer") : "";
     }
 
     /**

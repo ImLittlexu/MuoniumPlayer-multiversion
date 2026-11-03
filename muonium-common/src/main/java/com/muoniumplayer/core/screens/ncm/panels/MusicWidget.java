@@ -592,12 +592,13 @@ public class MusicWidget extends RoundedRectWidget {
         IconWidget btnAddToPlaylist = PlayerQueueIcons.newAddToPlaylistButton(20);
         this.addChild(btnAddToPlaylist);
         btnAddToPlaylist.setShouldOverrideMouseCursor(true);
+        btnAddToPlaylist.setTooltip("加入歌单");
         btnAddToPlaylist.setHidden(!playlistAddable);
         btnAddToPlaylist.setClickable(playlistAddable);
         btnAddToPlaylist.setBeforeRenderCallback(() -> {
             btnAddToPlaylist.setColor(NCMScreen.getColor(NCMScreen.ColorType.SECONDARY_TEXT));
             btnAddToPlaylist.centerVertically();
-            btnAddToPlaylist.setPosition(like.getRelativeX() - ACTION_GAP - btnAddToPlaylist.getWidth(),
+            btnAddToPlaylist.setPosition(playlistActionX(actionsAnchorX(lblMusicDuration), likeable),
                     btnAddToPlaylist.getRelativeY());
         });
         btnAddToPlaylist.setOnClickCallback((x, y, button) -> {
@@ -666,6 +667,12 @@ public class MusicWidget extends RoundedRectWidget {
                 return true;
             });
         }
+    }
+
+    /** 隐藏的红心不会执行布局回调，歌单按钮必须直接按固定槽位定位。 */
+    static double playlistActionX(double actionsAnchor, boolean likeable) {
+        return actionsAnchor - (likeable ? ACTION_GAP + LikeButton.BOX : 0.0)
+                - ACTION_GAP - ACTION_ICON_SIZE;
     }
 
     /**

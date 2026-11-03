@@ -337,6 +337,7 @@ final class NowPlayingInfo implements SharedRenderingConstants {
      * 也是逐行的，按格式名分会把它标成逐字。</p>
      */
     private String lyricLabel(boolean english) {
+        if (CloudMusic.hasAiSubtitleLyrics()) return english ? "AI · LINE" : "AI字幕 · 逐行";
         if (!lyricProbed || lyricProbe.isDelayed(400L)) {
             List<LyricLine> lines = CloudMusic.lyrics;
             if (lines == null || lines.isEmpty()) {

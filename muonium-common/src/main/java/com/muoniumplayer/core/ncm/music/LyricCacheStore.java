@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -63,12 +62,20 @@ final class LyricCacheStore {
 
     /** 写入一首歌的时间轴。失败一律静默——缓存写不进去不影响这次播放。 */
     static void store(String stableKey, List<LyricLine> lines) {
+        store(stableKey, lines, new JsonObject());
+    }
+
+    static void store(String stableKey, List<LyricLine> lines, JsonObject rawJson) {
         if (stableKey == null || stableKey.trim().isEmpty() || lines == null || lines.isEmpty()) return;
         try {
             File directory = ConfigPaths.LYRIC_CACHE;
             if (!directory.isDirectory() && !directory.mkdirs()) return;
 
             JsonObject root = serialize(stableKey, lines);
+            if (rawJson != null && rawJson.has(BvLibraryLyricService.METADATA)) {
+                root.add(BvLibraryLyricService.METADATA,
+                        rawJson.get(BvLibraryLyricService.METADATA).deepCopy());
+            }
             File target = fileFor(stableKey);
             // 先写临时文件再原子替换：写到一半被杀不会留下一个半截 JSON 被当成缓存命中。
             File temporary = new File(directory, target.getName() + ".tmp");
@@ -97,23 +104,32 @@ final class LyricCacheStore {
      * @return 未命中、版本不符、内容损坏时返回空列表；调用方据此回退到常规加载链
      */
     static List<LyricLine> load(String stableKey) {
-        if (stableKey == null || stableKey.trim().isEmpty()) return Collections.emptyList();
+        return loadResult(stableKey, Long.MAX_VALUE).lines;
+    }
+
+    static LyricLoadService.LyricLoadResult loadResult(String stableKey, long maxAgeMs) {
+        if (stableKey == null || stableKey.trim().isEmpty()) return LyricLoadService.LyricLoadResult.empty();
         File source = fileFor(stableKey);
-        if (!source.isFile()) return Collections.emptyList();
+        if (!source.isFile() || System.currentTimeMillis() - source.lastModified() >= maxAgeMs)
+            return LyricLoadService.LyricLoadResult.empty();
 
         try {
             String text = new String(Files.readAllBytes(source.toPath()), StandardCharsets.UTF_8);
             JsonElement parsed = new JsonParser().parse(text);
-            if (parsed == null || !parsed.isJsonObject()) return Collections.emptyList();
+            if (parsed == null || !parsed.isJsonObject()) return LyricLoadService.LyricLoadResult.empty();
             JsonObject root = parsed.getAsJsonObject();
-            if (intOf(root, "version", -1) != FORMAT_VERSION) return Collections.emptyList();
-            // 哈希撞了不要紧,但绝不能把别的歌的歌词交出去。
-            if (!stableKey.equals(stringOf(root, "key"))) return Collections.emptyList();
-            return deserialize(root);
+            if (intOf(root, "version", -1) != FORMAT_VERSION) return LyricLoadService.LyricLoadResult.empty();
+            if (!stableKey.equals(stringOf(root, "key"))) return LyricLoadService.LyricLoadResult.empty();
+            JsonObject raw = new JsonObject();
+            if (root.has(BvLibraryLyricService.METADATA)) {
+                JsonObject metadata = root.getAsJsonObject(BvLibraryLyricService.METADATA);
+                BvLibraryLyricService.validateMetadata(metadata);
+                raw.add(BvLibraryLyricService.METADATA, metadata);
+            }
+            return new LyricLoadService.LyricLoadResult(raw, deserialize(root));
         } catch (Throwable failure) {
-            // 读坏了就当没有,顺手删掉,免得每次加载都踩一次。
             invalidate(stableKey);
-            return Collections.emptyList();
+            return LyricLoadService.LyricLoadResult.empty();
         }
     }
 
@@ -143,7 +159,8 @@ final class LyricCacheStore {
 
         final String key = next.getStableKey();
         if (key == null || key.isEmpty()) return;
-        if (fileFor(key).isFile()) return;
+        if (!loadResult(LyricLoadService.cacheKey(key),
+                next.isBvLibrary() ? BvLibraryLyricService.CACHE_MAX_AGE_MS : Long.MAX_VALUE).lines.isEmpty()) return;
 
         synchronized (PREFETCH_LOCK) {
             if (key.equals(prefetchingKey)) return;
@@ -155,11 +172,7 @@ final class LyricCacheStore {
             public void run() {
                 try {
                     // 与正常加载完全同一条链路:预取到的歌词和真正轮到这首歌时用的是同一份。
-                    LyricLoadService.LyricLoadResult result =
-                            LyricLoadService.load(next, next.getId(), 0L, null);
-                    if (result != null && result.lines != null && !result.lines.isEmpty()) {
-                        store(key, result.lines);
-                    }
+                    LyricLoadService.load(next, next.getId(), 0L, null);
                 } catch (Throwable failure) {
                     System.err.println("[Music/LyricCache] 预取失败 " + key + ": " + failure.getMessage());
                 } finally {

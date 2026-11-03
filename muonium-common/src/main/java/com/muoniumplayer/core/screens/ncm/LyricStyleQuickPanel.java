@@ -104,6 +104,7 @@ final class LyricStyleQuickPanel implements SharedRenderingConstants, SharedCons
      * 所以「换哪个库」必须有自己的一行，不能让用户在一次「重取」里猜为什么毫无变化。</p>
      */
     private static final int KIND_LYRIC_SOURCE = 18;
+    private static final int KIND_LYRIC_NOTICE = 27;
 
     /**
      * 「手动选词」：打开歌词搜索弹窗，给正在放的这首歌挑一份人确认过的歌词。
@@ -862,6 +863,11 @@ final class LyricStyleQuickPanel implements SharedRenderingConstants, SharedCons
         // 缩放裁掉，摆在那里会让这个功能在那种配置下直接够不到。
         addRow(KIND_SECTION, 2, SECTION_HEIGHT);
         addRow(KIND_LYRIC_SOURCE, 0, PICK_ROW_HEIGHT);
+        String disclaimer = CloudMusic.getLyricDisclaimer();
+        if (!disclaimer.isEmpty()) {
+            int count = FontManager.pf12bold.fitWidth(disclaimer, trackWidth() - 12).length;
+            addRow(KIND_LYRIC_NOTICE, 0, count * FontManager.pf12bold.getFontHeight() + 8);
+        }
         addRow(KIND_LYRIC_SEARCH, 0, PICK_ROW_HEIGHT);
         addRow(KIND_LYRIC_RELOAD, 0, PICK_ROW_HEIGHT);
         addRow(KIND_LYRIC_OFFSET, 0, ROW_HEIGHT);
@@ -1548,6 +1554,16 @@ final class LyricStyleQuickPanel implements SharedRenderingConstants, SharedCons
                     hexColor(1f, 1f, 1f, panelAlpha * .52f));
             return;
         }
+        if (row.kind == KIND_LYRIC_NOTICE) {
+            String[] notice = FontManager.pf12bold.fitWidth(CloudMusic.getLyricDisclaimer(), trackWidth() - 12);
+            double y = row.y + 2;
+            for (String line : notice) {
+                FontManager.pf12bold.drawString(line, rowLeft(row) + 6, y,
+                        hexColor(1f, 1f, 1f, panelAlpha * .52f));
+                y += FontManager.pf12bold.getFontHeight();
+            }
+            return;
+        }
         if (row.kind == KIND_LYRIC_SOURCE) {
             renderPickRow(row, "歌词来源", lyricSourceValue(), mouseX, mouseY, panelAlpha);
             return;
@@ -1629,12 +1645,14 @@ final class LyricStyleQuickPanel implements SharedRenderingConstants, SharedCons
     private String lyricSourceValue() {
         int pinned = CloudMusic.getLyricSource();
         int served = CloudMusic.getServedLyricSource();
-        String pinnedName = LyricSourceMemory.displayName(pinned);
+        String platformName = CloudMusic.hasAiSubtitleLyrics() ? "平台 · AI字幕" : LyricSourceMemory.displayName(LyricSourceMemory.PLATFORM);
+        String pinnedName = pinned == LyricSourceMemory.PLATFORM ? platformName : LyricSourceMemory.displayName(pinned);
         if (pinned != LyricSourceMemory.AUTO) {
             if (served < 0 || served == pinned) return pinnedName;
             return pinnedName + " · 未命中";
         }
-        return served < 0 ? pinnedName : pinnedName + " · " + LyricSourceMemory.displayName(served);
+        return served < 0 ? pinnedName : pinnedName + " · "
+                + (served == LyricSourceMemory.PLATFORM ? platformName : LyricSourceMemory.displayName(served));
     }
 
     /**

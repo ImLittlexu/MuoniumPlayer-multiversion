@@ -220,8 +220,7 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
             this.musicLyricsPanel.onInit();
 
         Keyboard.enableRepeatEvents(true);
-        // IMBlocker 会在 setScreen 开头按「未知屏幕=游戏界面」把窗口 IME 摘掉；
-        // 它的任务比这里早入队，主线程队列 FIFO，这里再挂回去即等价于屏幕白名单。
+        // 向 IMBlocker 的焦点容器申请文本输入；退出时由其屏幕切换逻辑恢复状态。
         IMBlockerCompat.keepIMEOn();
         CursorUtils.setCursor(CursorUtils.ARROW);
     }

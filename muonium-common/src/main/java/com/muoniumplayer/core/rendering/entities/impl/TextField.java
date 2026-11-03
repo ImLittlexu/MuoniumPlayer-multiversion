@@ -642,8 +642,7 @@ public class TextField implements SharedConstants {
             cursorForceShowTimer.reset();
             cursorCounter = 0;
             Keyboard.enableRepeatEvents(true);
-            // 自绘输入框的焦点 IMBlocker 不可见；点亮时把窗口 IME 挂回去
-            //（覆盖 alt-tab 回窗后它按「游戏界面」重新摘掉 IME 的情况）。
+            // 自绘输入框向 IMBlocker 的焦点容器申请输入，保持其窗口状态与焦点状态一致。
             IMBlockerCompat.keepIMEOn();
         }
 

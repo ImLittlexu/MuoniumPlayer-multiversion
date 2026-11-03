@@ -84,16 +84,20 @@ final class LyricLoadService {
         final String trackKey = music.getStableKey();
         final String cacheKey = cacheKey(trackKey);
 
-        List<LyricLine> cached = LyricCacheStore.load(cacheKey);
-        if (!cached.isEmpty()) {
+        LyricLoadResult cached = LyricCacheStore.loadResult(cacheKey,
+                music.isBvLibrary() ? BvLibraryLyricService.CACHE_MAX_AGE_MS : Long.MAX_VALUE);
+        if (!cached.lines.isEmpty()) {
             System.out.println("[Music/Cache] Loaded lyrics from disk cache for " + trackKey);
-            return new LyricLoadResult(new JsonObject(), cached);
+            if (cached.rawJson.has(BvLibraryLyricService.METADATA)) {
+                SERVED.put(trackKey, LyricSourceMemory.PLATFORM);
+            }
+            return cached;
         }
 
         LyricLoadResult result = resolve(music, songId, profileId, embeddedLyricFile);
         if (result.lines != null && !result.lines.isEmpty()) {
             markChorus(music, songId, result.lines);
-            LyricCacheStore.store(cacheKey, result.lines);
+            LyricCacheStore.store(cacheKey, result.lines, result.rawJson);
         }
         return result;
     }
@@ -110,7 +114,8 @@ final class LyricLoadService {
     private static String cacheKeyFor(String trackKey, int source, String manualSuffix) {
         return trackKey + "|a" + (AmllTtmlLyricService.isEnabled() ? 1 : 0)
                 + "q" + (QQQrcLyricService.isEnabled() ? 1 : 0)
-                + "s" + source + manualSuffix;
+                + "s" + source + manualSuffix
+                + (trackKey.startsWith("gogo_") || trackKey.startsWith("unm_") ? "|lyrics1" : "");
     }
 
     /**
@@ -288,6 +293,20 @@ final class LyricLoadService {
             }
             System.out.println("[Music/Source] 指定的 " + LyricSourceMemory.displayName(pinned)
                     + " 这次没有逐字结果,回落自动链路: " + trackKey);
+        }
+
+        // 精确平台歌词优先于按标题猜测的逐字源；手动钉词和指定来源仍在上面生效。
+        if (music.isBvLibrary()) {
+            try {
+                LyricLoadResult library = BvLibraryLyricService.fetch(music);
+                if (!library.lines.isEmpty()) {
+                    SERVED.put(trackKey, LyricSourceMemory.PLATFORM);
+                    return library;
+                }
+            } catch (IOException | RuntimeException failure) {
+                System.err.println("[Music/Library] 平台歌词获取失败 " + trackKey + ": " + failure.getMessage());
+                if (Thread.currentThread().isInterrupted()) return LyricLoadResult.empty();
+            }
         }
 
         // ── 1.6) YouTube 自己的歌词 ────────────────────────────────────────────
@@ -758,7 +777,7 @@ final class LyricLoadService {
         final JsonObject rawJson;
         final List<LyricLine> lines;
 
-        private LyricLoadResult(JsonObject rawJson, List<LyricLine> lines) {
+        LyricLoadResult(JsonObject rawJson, List<LyricLine> lines) {
             this.rawJson = rawJson;
             this.lines = lines;
         }
