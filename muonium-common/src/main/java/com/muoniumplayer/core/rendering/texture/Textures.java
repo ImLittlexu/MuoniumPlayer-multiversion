@@ -4,6 +4,7 @@ import lombok.experimental.UtilityClass;
 import com.muoniumplayer.core.MuoniumPlayerExtension;
 import com.muoniumplayer.core.interfaces.SharedConstants;
 import com.muoniumplayer.core.rendering.TextureManager;
+import com.muoniumplayer.core.rendering.BvLibraryCoverLayout;
 import com.muoniumplayer.core.utils.Location;
 import com.muoniumplayer.core.utils.network.HttpUtils;
 import com.muoniumplayer.core.utils.other.multithreading.MultiThreadingUtil;
@@ -81,6 +82,9 @@ public class Textures implements SharedConstants {
             try (InputStream inputStream = HttpUtils.downloadStream(url)) {
                 if (inputStream != null) {
                     BufferedImage img = DynamicTexture.readImage(inputStream);
+                    BufferedImage display = BvLibraryCoverLayout.prepare(location, img);
+                    if (display != img && img != null) img.flush();
+                    img = display;
 
                     if (img != null) {
                         queuedUpload = true;

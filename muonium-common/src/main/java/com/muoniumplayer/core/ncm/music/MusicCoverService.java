@@ -8,6 +8,7 @@ import com.muoniumplayer.core.ncm.api.CloudMusicApi;
 import com.muoniumplayer.core.ncm.music.dto.Music;
 import org.apache.commons.io.IOUtils;
 import com.muoniumplayer.core.rendering.GaussianKernel;
+import com.muoniumplayer.core.rendering.BvLibraryCoverLayout;
 import com.muoniumplayer.core.rendering.TextureManager;
 import com.muoniumplayer.core.rendering.texture.AbstractTexture;
 import com.muoniumplayer.core.rendering.texture.AnimatedCoverTexture;
@@ -705,9 +706,10 @@ final class MusicCoverService {
             CoverThemePalette.set(palette);
             CoverGradientColors.set(representatives);
         }
-        Textures.loadTexture(musicCover, coverImage);
+        BufferedImage displayCover = BvLibraryCoverLayout.prepare(musicCover, coverImage);
+        Textures.loadTexture(musicCover, displayCover);
         // 低优先级池：31 半径的高斯模糊是纯 CPU 卷积，一张 320×320 的封面就能吃满一个核几十毫秒。
-        BackgroundWork.submit(() -> Textures.loadTexture(musicCoverBlur, blurCover(coverImage)));
+        BackgroundWork.submit(() -> Textures.loadTexture(musicCoverBlur, blurCover(displayCover)));
     }
 
     /**
@@ -742,7 +744,7 @@ final class MusicCoverService {
                     try (InputStream smallCoverStream = new java.io.FileInputStream(
                             LocalMusicLibrary.coverFileOf(music))) {
                         BufferedImage smallCoverImage = DynamicTexture.readImage(smallCoverStream);
-                        Textures.loadTexture(musicCoverSmall, smallCoverImage);
+                        Textures.loadTexture(musicCoverSmall, BvLibraryCoverLayout.prepare(musicCoverSmall, smallCoverImage));
                     }
                 } catch (Throwable t) {
                     System.err.println("[Music] 本地小封面加载失败: " + t);
@@ -756,7 +758,7 @@ final class MusicCoverService {
             try (InputStream smallCoverStream = HttpUtils.downloadStream(coverUrl(music, 128), 5,
                     music != null && music.isYouTube() ? YouTubeProxySettings.createHttpProxy() : null)) {
                 BufferedImage smallCoverImage = DynamicTexture.readImage(smallCoverStream);
-                Textures.loadTexture(musicCoverSmall, smallCoverImage);
+                Textures.loadTexture(musicCoverSmall, BvLibraryCoverLayout.prepare(musicCoverSmall, smallCoverImage));
             } catch (Throwable t) {
                 System.err.println("[Music] 小封面加载失败: " + t);
             }
