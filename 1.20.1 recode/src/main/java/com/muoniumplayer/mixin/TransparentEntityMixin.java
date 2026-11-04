@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * 「通透模式」的实体压缩：把果冻矩阵包住原版的实体渲染括号。
  *
- * <p>1.20.1~1.21.11 走单段式 {@code render(Entity, ...)}：在首次
+ * <p>1.20.1/1.21.1 走单段式 {@code render(Entity, ...)}：在首次
  * {@code translate} 落地后压矩阵，在火焰动画读取前还原——火焰、阴影、
  * 碰撞箱调试框都画在括号外。26.x 的 extract/submit 双段式见各该树的
  * 同名 mixin。缩放只动本机画面，不碰碰撞箱与服务端状态。</p>
@@ -26,9 +26,9 @@ abstract class TransparentEntityMixin {
             target = "Lcom/mojang/blaze3d/vertex/PoseStack;translate(DDD)V", ordinal = 0, shift = At.Shift.AFTER))
     private void transmode$begin(Entity entity, double x, double y, double z, float yaw, float partialTick,
                                  PoseStack pose, MultiBufferSource buffers, int light, CallbackInfo ci) {
-        if (!(entity instanceof LivingEntity)) return;
+        if (!(entity instanceof LivingEntity) || !TransparentMode.isEnabled()) return;
         float heightScale = TransparentMode.heightScale();
-        if (heightScale >= 1f) return;
+        // 零节拍、回弹拉高与只调宽度时也须 push，与 end 的同一开关条件配对。
         pose.pushPose();
         pose.scale(TransparentMode.widthScale(), heightScale, 1f);
     }
@@ -37,7 +37,7 @@ abstract class TransparentEntityMixin {
             target = "Lnet/minecraft/world/entity/Entity;displayFireAnimation()Z"))
     private void transmode$end(Entity entity, double x, double y, double z, float yaw, float partialTick,
                                PoseStack pose, MultiBufferSource buffers, int light, CallbackInfo ci) {
-        // popPose 只在 push 过才需要；关着时 heightScale 恒为 1，begin 不会 push。
+        // 与 begin 使用相同条件，不能按高度缩放值决定是否压栈。
         if (entity instanceof LivingEntity && TransparentMode.isEnabled()) pose.popPose();
     }
 }
