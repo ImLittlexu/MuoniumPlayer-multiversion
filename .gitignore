@@ -156,3 +156,8 @@ error-report-*/
 
 # Widevine/Apple 许可调试产物（一次性素材，含设备指纹，不入库）
 /g6work/
+
+# Fork: publish only the unified patch-version entry used by bump-version.bat.
+!/tools/
+/tools/*
+!/tools/bump-version.ps1
