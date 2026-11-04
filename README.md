@@ -1,3 +1,6 @@
+> **GOGO / UNM 定制版**：本仓库由 [ImLittlexu](https://github.com/ImLittlexu) 维护，主要交付 **Minecraft 1.21.1 Fabric**。默认分支 `custom` 包含 GOGO娱乐、UNM小站及相关修复；`main` 保留作者原版。
+> 定制功能与同步步骤见 [CUSTOM.md](CUSTOM.md)。原项目：[zihe114514/MuoniumPlayer-multiversion](https://github.com/zihe114514/MuoniumPlayer-multiversion)。
+
 <div align="center">
 
 <img src="assets/icon.png" width="108" alt="MuoniumPlayer">

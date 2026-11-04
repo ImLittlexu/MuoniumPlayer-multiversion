@@ -5,6 +5,12 @@
 
 ---
 
+## 定制 Fork 与分支
+
+- 本 Fork 为 `ImLittlexu/MuoniumPlayer-multiversion`，默认及日常开发分支为 `custom`；`main` 只跟随作者原版主线。
+- `origin` 指向本 Fork，`upstream` 指向作者仓库。定制提交推送 `origin/custom`；上游更新先在临时集成分支合并、验证，再回到 `custom`。
+- 同步时保留 GOGO/UNM 接入、歌词、持久化、歌单入口、筛选、封面补边、IMBlocker 修复及自定义默认按键。具体流程见 [CUSTOM.md](CUSTOM.md)。
+
 ## 仓库一句话
 
 MuoniumPlayer：多版本 Minecraft **纯客户端**音乐 mod（网易云 / QQ / 酷狗 / 汽水 / YouTube / Spotify / Apple…）。
