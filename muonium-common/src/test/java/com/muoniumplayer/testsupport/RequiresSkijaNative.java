@@ -1,6 +1,6 @@
 package com.muoniumplayer.testsupport;
 
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Inherited;
@@ -19,6 +19,6 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
-@EnabledIfSystemProperty(named = "muonium.ci.skipSkijaNative", matches = "false")
+@DisabledIfSystemProperty(named = "muonium.ci.skipSkijaNative", matches = "true")
 public @interface RequiresSkijaNative {
 }
