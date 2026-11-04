@@ -38,6 +38,19 @@ class GogoLiveProbeTest {
       assertNotNull(
           GogoMusicService.playlistSongs(platform, playlists.items.get(0).getPlatformPlaylistId()));
     Music song = page.items.get(0);
+    if ("1".equals(System.getenv("MUONIUM_BV_ROOM_LIVE"))) {
+      song.setPartyExpectedDurationMs(GogoAudioResolver.roomDuration(song));
+      System.out.println(
+          platform
+              + "_ROOM_EXPECTED id="
+              + song.getSourceId()
+              + " bv="
+              + song.getGogoBvid()
+              + " cid="
+              + song.getGogoCid()
+              + " duration="
+              + song.getPartyExpectedDurationMs());
+    }
     Map<String, List<String>> routes = new LinkedHashMap<>();
     try {
       routes.put("direct", GogoAudioResolver.directUrls(song));
@@ -83,6 +96,13 @@ class GogoLiveProbeTest {
               Files.copy(body, audio.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
             GogoAudioResolver.validate(audio, song);
+            if (song.getPartyExpectedDurationMs() > 0)
+              System.out.println(
+                  platform
+                      + "_ROOM_DECODED "
+                      + route.getKey()
+                      + " duration="
+                      + BvRoomAudio.decodedDuration(audio));
             last = null;
             break;
           } catch (Exception failure) {

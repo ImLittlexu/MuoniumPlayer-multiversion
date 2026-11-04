@@ -2040,7 +2040,7 @@ public class CloudMusic implements SharedConstants {
         }
 
         private boolean playSong(Music song) {
-            if (isPlaybackCancelled()) return false;
+            if (isPlaybackCancelled() || song.roomAudioCancelled()) return false;
 
             // 先使旧 session 失效并生成新 session/generation，绑定本次歌曲。
             session = CloudMusic.beginNewSession(song);
@@ -2291,10 +2291,10 @@ public class CloudMusic implements SharedConstants {
             }
 
             // URL 获取、下载或解码期间可能已经切歌。旧线程绝不能覆盖新会话的播放器。
-            if (!isSessionUsable(targetSession)) return false;
+            if (!isSessionUsable(targetSession) || song.roomAudioCancelled()) return false;
 
             synchronized (PLAYER_STATE_LOCK) {
-                if (!isSessionUsable(targetSession)) return false;
+                if (!isSessionUsable(targetSession) || song.roomAudioCancelled()) return false;
                 try {
                     player = initializePlayer(musicFile, song);
                     ownedPlayer = player;
@@ -2531,6 +2531,7 @@ public class CloudMusic implements SharedConstants {
 
         private boolean startPlayback(Music song, Tuple<String, String> playUrl, File musicFile,
                                       PlaybackSession targetSession) {
+            if (song.roomAudioCancelled()) return false;
             AudioPlayer activePlayer = ownedPlayer;
             if (activePlayer == null || !isSessionUsable(targetSession)) return false;
 
@@ -2544,6 +2545,7 @@ public class CloudMusic implements SharedConstants {
 
             try {
                 synchronized (PLAYER_STATE_LOCK) {
+                    if (song.roomAudioCancelled()) return false;
                     if (!isSessionUsable(targetSession) || ownedPlayer != activePlayer) return false;
                     if (offset > 0L) {
                         // automix 交接同一条 playFrom 路径（cue 后 play 复用同一 voice）。
@@ -2567,6 +2569,7 @@ public class CloudMusic implements SharedConstants {
 
                     File retryFile = getMusicFile(playUrl, song);
                     synchronized (PLAYER_STATE_LOCK) {
+                        if (song.roomAudioCancelled()) return false;
                         if (!isSessionUsable(targetSession)) return false;
                         player = initializePlayer(retryFile, song);
                         ownedPlayer = player;
@@ -2747,6 +2750,8 @@ public class CloudMusic implements SharedConstants {
 
         private static File cachedAudioFileLocked(String playUrl, String type, Music song, Quality quality,
                                                   boolean downloadIfMissing) {
+            if (song != null && song.isBvLibrary() && song.roomAudioCancelled())
+                throw new java.util.concurrent.CancellationException("房间音频准备已作废");
             File musicCacheDir = MusicAudioCache.directory();
             if (!musicCacheDir.exists() && !musicCacheDir.mkdirs()) {
                 throw new IllegalStateException("Unable to create music cache directory: " + musicCacheDir.getAbsolutePath());
@@ -2758,6 +2763,18 @@ public class CloudMusic implements SharedConstants {
             }
             String cacheKey = audioCacheKey(song, quality.getQuality());
             File cachedMusic = AudioCacheFiles.findCachedAudioFile(musicCacheDir, cacheKey, type);
+            if (cachedMusic != null && song != null && song.isBvLibrary()
+                    && song.getPartyExpectedDurationMs() > 0L) {
+                try { GogoAudioResolver.decodedDuration(cachedMusic, song); }
+                catch (IOException invalid) {
+                    if (!downloadIfMissing) return null;
+                    try {
+                        java.nio.file.Files.deleteIfExists(AudioCacheFiles.getDecodedWavFile(cachedMusic).toPath());
+                        java.nio.file.Files.deleteIfExists(cachedMusic.toPath());
+                    } catch (IOException failure) { throw new IllegalStateException("无法清理无效的房间音频缓存", failure); }
+                    cachedMusic = null;
+                }
+            }
             if (cachedMusic != null) {
                 // 命中也要记一笔：容量淘汰只看 lastModified 的话，一首常听但下载得早的歌
                 // 会被当成最冷的缓存删掉。
@@ -4654,7 +4671,7 @@ public class CloudMusic implements SharedConstants {
 
             PlaybackSession nextSession;
             synchronized (PLAYER_STATE_LOCK) {
-                if (!isSessionUsable(session) || ownedPlayer != outgoing
+                if (!isSessionUsable(session) || ownedPlayer != outgoing || track.song.roomAudioCancelled()
                         || (selection == null ? manualSelection != null : manualSelection != selection)) {
                     closeQuietly(incoming);
                     return false;
@@ -5183,6 +5200,21 @@ public class CloudMusic implements SharedConstants {
      */
     private static final AtomicBoolean AUTOMIX_ANALYSIS_BUSY = new AtomicBoolean(false);
 
+    /** 元数据取不到时长时，静默复用同一缓存入口；并发预取已占用时等待其缓存锁。 */
+    public static long prepareBvRoomTrackDuration(Music song) throws IOException {
+        if (song == null || !song.isBvLibrary()) throw new IOException("不是双站歌曲");
+        Boolean previous = QUIET_DOWNLOAD.get();
+        QUIET_DOWNLOAD.set(Boolean.TRUE);
+        try {
+            String marker = GogoAudioResolver.prefix(song.getSource()) + song.getSourceId();
+            File audio = PlayThread.cachedAudioFile(marker, "mp4", song, quality, true);
+            return GogoAudioResolver.decodedDuration(audio, song);
+        } finally {
+            if (previous == null) QUIET_DOWNLOAD.remove();
+            else QUIET_DOWNLOAD.set(previous);
+        }
+    }
+
     /**
      * 把房间队列里的一首按<b>与实播完全相同</b>的缓存键落到磁盘。
      *
@@ -5208,7 +5240,8 @@ public class CloudMusic implements SharedConstants {
         }
         // 取一次当前音质，去重槽与落盘用同一档：中途换音质不会让两份下载错开键。
         final Quality selected = quality;
-        String slot = song.getStableKey() + '|' + selected.getQuality();
+        String slot = song.getStableKey() + '|' + selected.getQuality()
+                + (song.isBvLibrary() ? "|" + GogoAudioResolver.locatorKey(song) : "");
         if (!PREFETCH_IN_FLIGHT.add(slot)) {
             return false;   // 同一首已经有一份在下了
         }

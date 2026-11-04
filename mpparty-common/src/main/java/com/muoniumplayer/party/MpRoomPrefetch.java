@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * → 探测容器 →（可能再）转码」，房间里那句「无缝交接」永远只混得动第一首。</p>
  *
  * <p><b>怎么做。</b>服务端每次广播歌单（{@code S_QUEUE}）与房间快照（{@code S_ROOM_STATE}）都把
- * 整份待播列表带过来，而<b>条目本身就带着点歌人解析好的直链</b>。这里在当前那首之后取最多
+ * 整份待播列表带过来。普通源只预取自带直链的条目；GOGO/UNM 允许按公开歌曲 ID 补齐定位。
+ * 这里在当前那首之后取最多
  * {@value #PREFETCH_LIMIT} 首，用 {@link CloudMusic#prefetchRoomTrackAudio} 按<b>与实播完全相同</b>
  * 的缓存键落到磁盘 —— 等它真轮到，播放线程查一次盘就走完了，一段网络等待都不占。</p>
  *
@@ -36,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <h3>三条不许越过的线</h3>
  * <ul>
- *   <li><b>不解析。</b>条目没有可用直链、或直链快过期，就跳过这一首。解析是「代解析」那套链路的活
+ *   <li><b>普通源不解析。</b>条目没有可用直链、或直链快过期，就跳过这一首。双站例外仅查询公开定位。解析是「代解析」那套链路的活
  *       （由服务端分级求助决定问谁），在这里替它解析一次等于用本机账号取一条没人授权的流，
  *       而且会把 {@code Music#getPlayUrl()} 那条会发请求、会动播放侧状态的路径拖进预热。</li>
  *   <li><b>不占 {@code BackgroundWork}。</b>那条低优先级池只有
@@ -203,14 +204,27 @@ public final class MpRoomPrefetch {
             }
             if (!attempted.add(slotOf(track))) continue;   // 下过/正在下：跳过，不重排
             scheduled++;
-            final String url = track.url;
+            final String url = song.isBvLibrary()
+                    ? com.muoniumplayer.core.ncm.music.GogoAudioResolver.prefix(song.getSource()) + song.getSourceId()
+                    : track.url;
+            final long roomSession = BvRoomTracks.session();
             final long validToken = token;
             try {
                 downloadPool().execute(new Runnable() {
                     @Override
                     public void run() {
                         if (validToken != generation.get()) return;
-                        CloudMusic.prefetchRoomTrackAudio(url, null, song);
+                        try {
+                            if (song.isBvLibrary()) {
+                                BvRoomTracks.locate(song, track.entryId, roomSession);
+                                java.util.function.BooleanSupplier valid = song.getPartySessionValid();
+                                song.setPartySessionValid(() -> valid.getAsBoolean() && validToken == generation.get());
+                            }
+                            if (validToken != generation.get()) return;
+                            CloudMusic.prefetchRoomTrackAudio(url, null, song);
+                        } catch (Exception failure) {
+                            System.out.println("[MpPrefetch] 双站定位未就绪：" + failure.getMessage());
+                        }
                     }
                 });
             } catch (Throwable rejected) {
@@ -259,6 +273,7 @@ public final class MpRoomPrefetch {
             if (!CloudMusic.automixProfileWarmupReady()) return;
             if (!yieldToRealHandover(token)) return;
             Music song = candidates.get(i);
+            if (song.isBvLibrary() && song.getGogoCid().isEmpty()) continue;
             warmed.add(tracks.get(i).key());
             if (CloudMusic.warmAutomixProfile(song)) {
                 System.out.println("[MpPrefetch] 已预热交接 profile：" + song.getName());
@@ -357,6 +372,10 @@ public final class MpRoomPrefetch {
     /** 这条队列条目自带「现在就能下」的直链吗。没有就是没有，这里不替它解析。 */
     public static boolean hasUsableStreamUrl(MpTrack track, long nowMillis) {
         if (track == null) return false;
+        if (BvRoomTracks.supports(track.source)) {
+            return track.numericId() > 0 && track.durationMs > 0
+                    && track.durationMs <= com.muoniumplayer.core.ncm.music.BvRoomAudio.MAX_DURATION_MS;
+        }
         String url = track.url;
         if (url == null || url.trim().isEmpty()) return false;
         return track.urlExpiresAt <= 0L || track.urlExpiresAt > nowMillis + URL_EXPIRY_MARGIN_MILLIS;
@@ -388,6 +407,10 @@ public final class MpRoomPrefetch {
 
     /** 一条队列条目的记账身份：曲目键 + 直链。换了直链（服务端续签）允许再试一次。 */
     private static String slotOf(MpTrack track) {
+        if (BvRoomTracks.supports(track.source)) {
+            Music song = musicOf(track);
+            return track.key() + '|' + (song == null ? "invalid" : song.getGogoBvid() + '_' + song.getGogoCid());
+        }
         return track.key() + '|' + track.url;
     }
 

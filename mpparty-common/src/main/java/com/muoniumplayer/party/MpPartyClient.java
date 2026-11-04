@@ -871,11 +871,12 @@ public final class MpPartyClient {
         JsonArray resolvable = new JsonArray();
         JsonArray viaLx = new JsonArray();
         for (MusicPlatform platform : MusicPlatform.values()) {
+            if (platform.isBvLibrary()) resolvable.add(MpTrack.token(platform));
             try {
                 String token = MpTrack.token(platform);
                 if (PlatformAccess.loggedIn(platform)) vip.add(token);
                 if (Boolean.TRUE.equals(PlatformAccess.memberTier(platform))) member.add(token);
-                if (CrossSourceSwitcher.hasVipAccess(platform)) resolvable.add(token);
+                if (!platform.isBvLibrary() && CrossSourceSwitcher.hasVipAccess(platform)) resolvable.add(token);
                 if (CrossSourceSwitcher.lxCovers(platform)) viaLx.add(token);
             } catch (Throwable ignored) {
                 // 某个平台的会话状态查询抛了，不该拖垮整条心跳。
@@ -1118,11 +1119,13 @@ public final class MpPartyClient {
         }
         if (!requireChannel()) return true;
         final String label = playlistTitle(playlist);
+        final long requestedSession = BvRoomTracks.session();
         note("正在读取歌单《" + label + "》…", false);
         try {
             playlist.loadMusicsWithCallback(new PlayList.MusicsLoadedCallback() {
                 @Override
                 public void onMusicsLoaded(List<Music> musics) {
+                    if (!BvRoomTracks.valid(requestedSession)) return;
                     // 回调可能在查询线程上跑，而 sendBatch 自己会再转一次后台线程，这里不额外处理。
                     sendBatch(musics, label, false);
                 }
@@ -1158,11 +1161,13 @@ public final class MpPartyClient {
         }
         if (!requireChannel()) return true;
         final String label = playlistTitle(playlist);
+        final long requestedSession = BvRoomTracks.session();
         note("正在读取歌单《" + label + "》，准备随机抽 " + Math.min(count, playlistBatchLimit) + " 首…", false);
         try {
             playlist.loadMusicsWithCallback(new PlayList.MusicsLoadedCallback() {
                 @Override
                 public void onMusicsLoaded(List<Music> musics) {
+                    if (!BvRoomTracks.valid(requestedSession)) return;
                     // 回调可能在查询线程上跑：在这里把整段拷一份再洗，不动原列表的顺序 ——
                     // 播放器侧栏还按原顺序展示这张单子。
                     List<Music> pool = new ArrayList<Music>(musics == null ? Collections.<Music>emptyList() : musics);
@@ -1203,6 +1208,8 @@ public final class MpPartyClient {
      *                 整张灌的提示保留「按单次上限截断」那半句，两种动作的意外不同
      */
     private static void sendBatch(final List<Music> songs, final String label, final boolean shuffled) {
+        final long bvSession = BvRoomTracks.session();
+        final boolean progressive = hasControl();
         if (songs == null || songs.isEmpty()) {
             note("歌单《" + label + "》是空的，什么也没排", true);
             return;
@@ -1221,19 +1228,28 @@ public final class MpPartyClient {
                 }
                 int limit = playlistBatchLimit > 0 ? Math.min(playlistBatchLimit, usable.size())
                         : usable.size();
-                int sent = 0;
-                for (int from = 0; from < limit; from += BATCH_CHUNK) {
-                    int to = Math.min(limit, from + BATCH_CHUNK);
-                    JsonObject m = MpProto.msg(MpProto.C_ENQUEUE_BATCH);
-                    m.addProperty("playlist", label);
-                    JsonArray tracks = new JsonArray();
-                    for (int i = from; i < to; i++) {
-                        // url 传空串：见上面第 ① 条，链接不由点歌人一次性备齐。
-                        tracks.add(MpTrack.toJson(usable.get(i), "", 0L, 0L));
-                    }
-                    m.add("tracks", tracks);
-                    send(m);
-                    sent += to - from;
+                if (!progressive) limit = Math.min(limit, 200); // 普通成员一帧提交，不能触发导入冷却。
+                boolean hasBv = false;
+                for (int i = 0; i < limit; i++) hasBv |= usable.get(i).isBvLibrary();
+                int sent;
+                try {
+                    BvRoomBatch.Result result = BvRoomBatch.send(usable, limit,
+                            hasBv ? (progressive ? 2 : 200) : (progressive ? BATCH_CHUNK : 200),
+                            () -> BvRoomTracks.valid(bvSession),
+                            item -> item.isBvLibrary() ? BvRoomTracks.prepare(item, 0L, bvSession).json()
+                                    : MpTrack.toJson(item, "", 0L, 0L),
+                            tracks -> {
+                                JsonObject m = MpProto.msg(MpProto.C_ENQUEUE_BATCH);
+                                m.addProperty("playlist", label);
+                                m.add("tracks", tracks);
+                                send(m);
+                            });
+                    if (!BvRoomTracks.valid(bvSession)) return;
+                    sent = result.sent;
+                    if (result.failed > 0) note("歌单中 " + result.failed + " 首无法准备时长，已跳过", true);
+                } catch (InterruptedException cancelled) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
                 note(shuffled
                         ? "已从《" + label + "》随机排入 " + sent + " 首到房间"
@@ -1307,9 +1323,23 @@ public final class MpPartyClient {
             note("这首歌没有可用的曲目 ID，无法点歌", true);
             return;
         }
+        final long bvSession = BvRoomTracks.session();
         MultiThreadingUtil.runAsync(new Runnable() {
             @Override
             public void run() {
+                if (song.isBvLibrary()) {
+                    try {
+                        BvRoomTracks.Prepared prepared = BvRoomTracks.prepare(song, 0L, bvSession);
+                        if (!BvRoomTracks.valid(bvSession)) return;
+                        JsonObject message = MpProto.msg(op);
+                        message.add("track", prepared.json());
+                        if (playNext) message.addProperty("next", true);
+                        send(message);
+                    } catch (Exception failure) {
+                        if (BvRoomTracks.valid(bvSession)) note("双站点歌准备失败：" + failure.getMessage(), true);
+                    }
+                    return;
+                }
                 if (song.isNetease() && song.getId() > 0L) {
                     // 本家这一跳留着，不是因为它比脚本好，而是因为它会报「这条链接实际服务了
                     // 多长」—— 只有拿得到这个长度才识破得了 30/60 秒试听片段，而服务端采纳别人
@@ -1953,6 +1983,8 @@ public final class MpPartyClient {
 
     private static void applySnapshot(JsonObject msg) {
         MpRoom snapshot = MpRoom.fromJson(MpProto.obj(msg, "room"));
+        if (snapshot == null) return;
+        BvRoomTracks.enter(snapshot.id);
         room = snapshot;
         hintContributionOnce();
         // 快照里也带着「下一首」（服务端把它放在 room 对象里）：中途进房与断线重连的人
@@ -2024,6 +2056,8 @@ public final class MpPartyClient {
 
     private static void startTrack(MpTrack track, long pos, boolean isPlaying, long seq) {
         if (seq < appliedSeq) return;            // 过期帧：已经有更新的指令生效了
+        MpPlayback.invalidatePending();
+        BvRoomTracks.observe(track);
         currentTrack = track;
         durationMs = track.durationMs;
         stamp(pos, isPlaying, seq);
@@ -2116,6 +2150,26 @@ public final class MpPartyClient {
         if (songId == null || songId.trim().isEmpty()) return;
         final String src = MpProto.sourceOf(source);
         final MpTrack known = trackOf(src, songId);
+        if (BvRoomTracks.supports(src)) {
+            final long bvSession = BvRoomTracks.session();
+            MultiThreadingUtil.runAsync(() -> {
+                try {
+                    if (!BvRoomTracks.valid(bvSession) || (deadlineMs > 0 && System.currentTimeMillis() >= deadlineMs)) return;
+                    JsonObject metadata = known == null ? new JsonObject() : MpTrack.toJson(known.toMusic(), "", 0L, 0L);
+                    metadata.addProperty("source", src);
+                    metadata.addProperty("songId", songId);
+                    metadata.addProperty("entryId", entryId);
+                    Music target = MpTrack.fromJson(metadata).toMusic();
+                    BvRoomTracks.Prepared prepared = BvRoomTracks.prepare(target, entryId, bvSession, deadlineMs);
+                    if (BvRoomTracks.valid(bvSession) && (deadlineMs <= 0 || System.currentTimeMillis() < deadlineMs))
+                        sendUrlSupply(src, songId, prepared.locator.url(), 0L, false, entryId);
+                } catch (Exception failure) {
+                    if (BvRoomTracks.valid(bvSession) && (deadlineMs <= 0 || System.currentTimeMillis() < deadlineMs))
+                        declineUrl(entryId, tier, src, songId, "bv-prepare-failed");
+                }
+            });
+            return;
+        }
         if (MpTrack.platformOf(src) == null) {
             // 本机压根没有这个播放源 —— 这一格对这台机器是死题，说一声让别人接。
             declineUrl(entryId, tier, src, songId, "no-platform");
@@ -2559,6 +2613,8 @@ public final class MpPartyClient {
     // ── 杂项 ─────────────────────────────────────────────────────────────────
 
     private static void reset() {
+        BvRoomTracks.clear();
+        MpRoomPrefetch.invalidate();
         room = null;
         currentTrack = null;
         playing = false;

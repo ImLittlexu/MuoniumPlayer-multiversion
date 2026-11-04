@@ -38,6 +38,14 @@ public final class GogoAudioResolver {
   }
 
   static List<String> directUrls(Music song) throws Exception {
+    return parseDirectUrls(playData(song));
+  }
+
+  public static long roomDuration(Music song) throws Exception {
+    return BvRoomAudio.duration(playData(song));
+  }
+
+  private static JsonObject playData(Music song) throws Exception {
     String url =
         "https://api.bilibili.com/x/player/playurl?bvid="
             + song.getGogoBvid()
@@ -54,7 +62,7 @@ public final class GogoAudioResolver {
             .build();
     HttpResponse<String> reply = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
     if (reply.statusCode() != 200) throw new IOException("B站解析 HTTP " + reply.statusCode());
-    return parseDirectUrls(JsonParser.parseString(reply.body()).getAsJsonObject());
+    return JsonParser.parseString(reply.body()).getAsJsonObject();
   }
 
   static List<String> parseDirectUrls(JsonObject root) throws IOException {
@@ -111,41 +119,37 @@ public final class GogoAudioResolver {
       Validator validator) {
     List<String> urls = new ArrayList<>();
     try {
-      checkCancelled();
+      checkCancelled(song);
       urls.addAll(direct.urls(song));
     } catch (InterruptedException cancelled) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("曲库音频获取已取消", cancelled);
     } catch (Exception failure) {
-      checkCancelled();
+      checkCancelled(song);
       System.err.println(
           "[" + song.getSource().getDisplayName() + "] B站解析失败：" + failure.getMessage());
     }
     int directCount = urls.size();
     boolean hasR2 = song.getSource() == MusicPlatform.GOGO;
     if (hasR2) urls.add("https://cdn.eoes.cc/gogo/music/" + locatorKey(song) + ".m4a");
-    urls.add(
-        "https://bilibili-audio-proxy-zone-3e7t6w3b97d6-1307216294.eo-edgefunctions.com/proxy?bvid="
-            + song.getGogoBvid()
-            + "&cid="
-            + song.getGogoCid());
+    urls.add(new BvRoomAudio.Locator(song.getGogoBvid(), song.getGogoCid()).url());
     File temporary = new File(directory, key + ".candidate.mp4");
     File decoded = AudioCacheFiles.getDecodedWavFile(temporary);
     IllegalStateException exhausted =
         new IllegalStateException(
             song.getSource().getDisplayName() + (hasR2 ? "：直连、R2 和代理均无法播放" : "：直连和代理均无法播放"));
     for (int i = 0; i < urls.size(); i++) {
-      checkCancelled();
+      checkCancelled(song);
       String route = i < directCount ? "B站直连" : hasR2 && i == directCount ? "R2" : "代理";
       long started = System.nanoTime();
       try {
         Files.deleteIfExists(temporary.toPath());
         Files.deleteIfExists(decoded.toPath());
         transfer.download(urls.get(i), temporary, song);
-        checkCancelled();
+        checkCancelled(song);
         if (!temporary.isFile() || temporary.length() < 4) throw new IOException("音频下载失败或为空");
         validator.validate(temporary, song);
-        checkCancelled();
+        checkCancelled(song);
         String container = AudioContainerSupport.detectContainer(temporary);
         File result = new File(directory, key + "." + container);
         AudioCacheFiles.moveCacheFile(temporary, result);
@@ -162,7 +166,7 @@ public final class GogoAudioResolver {
                 + "ms");
         return result;
       } catch (Exception failure) {
-        checkCancelled();
+        checkCancelled(song);
         exhausted.addSuppressed(failure);
         System.err.println(
             "[" + song.getSource().getDisplayName() + "] " + route + " 失败：" + failure.getMessage());
@@ -182,9 +186,20 @@ public final class GogoAudioResolver {
     Files.createDirectories(decoded.getParentFile().toPath());
     AacAudioDecoder.decodeToWav(file, container, decoded, null);
     if (!AudioCacheFiles.isReusableDecodedWav(file, decoded)) throw new IOException("音频解码失败");
+    BvRoomAudio.validateDuration(file, song);
   }
 
-  private static void checkCancelled() {
-    if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("曲库音频获取已取消");
+  public static long decodedDuration(File file, Music song) throws IOException {
+    if (!AudioCacheFiles.isReusableDecodedWav(file, AudioCacheFiles.getDecodedWavFile(file)))
+      validate(file, song);
+    long actual = BvRoomAudio.decodedDuration(file);
+    if (song.getPartyExpectedDurationMs() > 0)
+      BvRoomAudio.checkDuration(song.getPartyExpectedDurationMs(), actual);
+    return actual;
+  }
+
+  private static void checkCancelled(Music song) {
+    if (Thread.currentThread().isInterrupted() || song.roomAudioCancelled())
+      throw new IllegalStateException("曲库音频获取已取消");
   }
 }

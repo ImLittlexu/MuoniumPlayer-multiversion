@@ -224,6 +224,7 @@ public final class MpTrack {
             // 酷狗取歌词按文件 hash 定位，而 songId 就是 hash。
             music.setKugouHash(songId);
         }
+        BvRoomTracks.restore(this, music);
         return music;
     }
 
@@ -235,6 +236,11 @@ public final class MpTrack {
      * 只影响缓存命中）。</p>
      */
     private long stableId(MusicPlatform platform) {
+        if (platform != null && platform.isBvLibrary()) {
+            long id = Long.parseLong(songId);
+            if (id <= 0L) throw new IllegalArgumentException("无效的双站歌曲 ID");
+            return id;
+        }
         if (platform == null || platform == MusicPlatform.NETEASE) {
             try {
                 return Long.parseLong(songId);

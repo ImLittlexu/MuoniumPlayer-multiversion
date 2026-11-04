@@ -349,13 +349,19 @@ class RoomPrefetchStaticTest {
         assertTrue(cloud.contains("private static final ThreadLocal<Boolean> QUIET_DOWNLOAD"),
                 "静默位必须按线程记：预热线程与播放线程会同时在下载不同的歌，共用一个全局布尔"
                         + "就会把真人那一次的进度条一起吞掉，那比多弹一张卡更糟");
-        // 三处：房间队列的提前下载、automix profile 预热、以及下一首的音频预取
+        // 四处：双站时长补测、房间队列的提前下载、automix profile 预热、以及下一首的音频预取
         // （CloudMusic#prefetchTrackAudio，YouTube 秒开靠它）。这个数字是会涨的哨兵，
         // 每加一条后台取流都要同时保证下面那个 remove() 一起涨。
-        assertEquals(3, count(cloud, "QUIET_DOWNLOAD.set(Boolean.TRUE);"),
-                "提前下载、profile 预热、下一首音频预取各自置位（前两者会触发 AAC→WAV 转码卡片）");
-        assertEquals(3, count(cloud, "QUIET_DOWNLOAD.remove();"),
+        assertEquals(4, count(cloud, "QUIET_DOWNLOAD.set(Boolean.TRUE);"),
+                "双站时长补测、提前下载、profile 预热、下一首音频预取各自置位");
+        assertEquals(4, count(cloud, "QUIET_DOWNLOAD.remove();"),
                 "置了几次就必须清几次：线程池会复用线程，漏清等于把静默带给下一次实播");
+
+        String duration = region(cloud, "public static long prepareBvRoomTrackDuration(",
+                "public static boolean prefetchRoomTrackAudio(");
+        assertTrue(duration.contains("Boolean previous = QUIET_DOWNLOAD.get()")
+                        && duration.contains("else QUIET_DOWNLOAD.set(previous)"),
+                "时长补测还要恢复调用线程已有的静默状态，不能清掉外层预热上下文");
 
         int asked = downloader.indexOf("CloudMusic.quietDownload()");
         int writesState = downloader.indexOf("musicInfo.downloading = true");

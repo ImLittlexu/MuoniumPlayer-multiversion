@@ -250,7 +250,7 @@ public class PlaylistPanel extends NCMPanel {
             this.addChild(btnParty);
             final double[] partyFade = new double[1];
             btnParty.setBeforeRenderCallback(() -> {
-                boolean show = MpPartyClient.playlistSupported() && !playList.getPlatform().isBvLibrary();
+                boolean show = MpPartyClient.playlistSupported();
                 partyFade[0] = Interpolations.interpolate(partyFade[0], show ? 1.0 : 0.0, .3f);
                 boolean visible = partyFade[0] > .04f;
                 btnParty.setClickable(visible);

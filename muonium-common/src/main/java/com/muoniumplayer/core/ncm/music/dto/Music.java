@@ -128,6 +128,14 @@ public class Music {
     /** 一起听链接的容器类型；留空则由 URL 后缀推断。 */
     private transient String partyStreamType;
 
+    /** 仅房间的双站音频校验使用；普通播放不受房间时长约束。 */
+    private transient long partyExpectedDurationMs;
+    private transient java.util.function.BooleanSupplier partySessionValid;
+
+    public boolean roomAudioCancelled() {
+        return partySessionValid != null && !partySessionValid.getAsBoolean();
+    }
+
     /** 跨平台字段。旧网易云 JSON 不包含这些字段时会自然回退到 NETEASE + 数字 id。 */
     private transient MusicPlatform source = MusicPlatform.NETEASE;
     private transient String sourceId;

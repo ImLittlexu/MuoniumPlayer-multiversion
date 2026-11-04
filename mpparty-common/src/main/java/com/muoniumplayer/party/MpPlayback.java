@@ -38,6 +38,7 @@ public final class MpPlayback {
     private static final long START_TIMEOUT_MS = 120_000L;
 
     /** 房间当前曲目对应的 Music 实例；本地误起播的拦截也靠它做身份判断。 */
+    private static final java.util.concurrent.atomic.AtomicLong playGeneration = new java.util.concurrent.atomic.AtomicLong();
     private static volatile Music partyMusic;
     /** 正在等「解析+下载+解码」完成，等到了由 {@link #tick()} 对齐一次。 */
     private static volatile boolean startPending;
@@ -74,6 +75,8 @@ public final class MpPlayback {
     public static void play(final MpTrack track, final String streamUrl, final long posMs, final boolean playing) {
         if (track == null || streamUrl == null || streamUrl.trim().isEmpty()) return;
         if (track.songId == null || track.songId.trim().isEmpty()) return;
+        final long request = playGeneration.incrementAndGet();
+        final long bvSession = BvRoomTracks.session();
 
         MultiThreadingUtil.runAsync(new Runnable() {
             @Override
@@ -81,18 +84,26 @@ public final class MpPlayback {
                 // 会话复核：排进线程池的这段时间里可能已经离房/被踢/解散
                 // （S_PLAY 与 S_LEFT 几乎同时到），此时 stop() 已清了 partyMusic 与
                 // 房间状态——照常起播就是「离房后的幽灵播放」，无心跳纠偏也不受控制。
-                if (MpPartyClient.room() == null) {
+                if (MpPartyClient.room() == null || request != playGeneration.get()
+                        || bvSession != BvRoomTracks.session()) {
                     System.out.println("[MpParty] 起播放弃：房间会话已不存在（离房竞态）");
                     return;
                 }
                 Music music;
                 try {
                     music = track.toMusic();
+                    if (music.isBvLibrary()) {
+                        BvRoomTracks.locate(music, track.entryId, bvSession);
+                        java.util.function.BooleanSupplier valid = music.getPartySessionValid();
+                        music.setPartySessionValid(() -> valid.getAsBoolean() && request == playGeneration.get());
+                    }
                 } catch (Throwable throwable) {
+                    if (request != playGeneration.get() || !BvRoomTracks.valid(bvSession)) return;
                     System.err.println("[MpParty] 构造曲目失败：" + throwable);
                     MpPartyClient.note("无法识别房间下发的歌曲：" + track.display(), true);
                     return;
                 }
+                if (request != playGeneration.get() || !BvRoomTracks.valid(bvSession)) return;
                 music.setPartyStreamUrl(streamUrl);
                 music.setPartyStreamType("");
                 // 起播链路一旦静默失败（下载好了却没声音）就完全没有痕迹可查，所以这一路
@@ -111,10 +122,11 @@ public final class MpPlayback {
                     // 期间离房的话，起播出来的就是没人管的幽灵播放。
                     // 也要把已改写的播放模式还回去：forceSequentialMode 只在 stop()
                     // 里还原，这个出口离 stop 还远，不还就是永久强制顺序播放。
-                    if (MpPartyClient.room() == null) {
+                    if (MpPartyClient.room() == null || request != playGeneration.get()
+                            || bvSession != BvRoomTracks.session()) {
                         System.out.println("[MpParty] 起播放弃：交给播放器前房间已离场（离房竞态）");
-                        startPending = false;
-                        restorePlayMode();
+                        if (partyMusic == music) startPending = false;
+                        if (MpPartyClient.room() == null) restorePlayMode();
                         return;
                     }
                     CloudMusic.play(roomQueue(music), 0);
@@ -157,6 +169,7 @@ public final class MpPlayback {
      * 房间行为与今天逐字节一致。</p>
      */
     public static void stageNext(final MpTrack next, final JsonObject plan) {
+        BvRoomTracks.observe(next);
         if (!RoomAutomix.active()) {
             clearRoomAutomix();
             return;
@@ -187,6 +200,11 @@ public final class MpPlayback {
         }
         music.setPartyStreamUrl(nextUrl);
         music.setPartyStreamType("");
+        if (music.isBvLibrary()) {
+            java.util.function.BooleanSupplier valid = music.getPartySessionValid();
+            music.setPartySessionValid(() -> valid.getAsBoolean()
+                    && (stagedNextMusic == music || partyMusic == music));
+        }
 
         stagedNext = next;
         stagedNextMusic = music;
@@ -258,6 +276,9 @@ public final class MpPlayback {
         final Music music = stagedNextMusic;
         if (staged == null || music == null) return false;
         if (track == null || !staged.key().equals(track.key())) return false;
+        if (music.isBvLibrary() && (music.roomAudioCancelled()
+                || music.getPartyExpectedDurationMs() != track.durationMs
+                || (staged.entryId > 0 && track.entryId > 0 && staged.entryId != track.entryId))) return false;
 
         boolean blendedLocally = CloudMusic.currentlyPlaying == music;
         if (!blendedLocally && !CloudMusic.roomAutomixHandover()) return false;
@@ -379,6 +400,7 @@ public final class MpPlayback {
      * <p>收尾要 join 播放线程（最多 1 秒），不能放在渲染线程上；起播那一路本来也是异步的。</p>
      */
     public static void stop() {
+        playGeneration.incrementAndGet();
         startPending = false;
         // 队列里多出来的那一格是房间的下一首，房间停了就得收回去 —— 否则它会被当成
         // 本机自己的队列继续往下播。必须在清 partyMusic 之前做（撤销要以「房间这一首
@@ -396,6 +418,10 @@ public final class MpPlayback {
                 CloudMusic.stopPlaybackAndClear(music);
             }
         });
+    }
+
+    static void invalidatePending() {
+        playGeneration.incrementAndGet();
     }
 
     /**

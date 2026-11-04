@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 「塌了不报错、只是行为不对」的分界：</p>
  *
  * <ol>
- *   <li><b>灌单只发元数据，不在本机逐首取流。</b>一次点歌顺手把自己解得出的直链带上是省事；
+ *   <li><b>普通源灌单只发元数据；双站使用准确时长和公开代理定位。</b>一次点歌顺手把自己解得出的直链带上是省事；
  *       一次灌 100 首再这么做，就是拿自己的账号（或房间里那几个会员的账号）按着一张单猛抽一遍，
  *       而其中大部分要等几十分钟才轮到，那时链接早过期了。写成 {@code upload()} 一样的调用
  *       在编译上完全正常，症状却是灌完单卡半小时 —— 只能靠断言。</li>
@@ -46,14 +46,14 @@ class RoomPlaylistQueueStaticTest {
     // ═══════════════════════ 发送侧 ═══════════════════════
 
     @Test
-    @DisplayName("整张歌单只发元数据：不在本机逐首解析直链")
-    void batchCarriesMetadataOnly() throws IOException {
+    @DisplayName("普通源灌单只发元数据，双站只走专用准备链路")
+    void batchKeepsOrdinarySourcesMetadataOnly() throws IOException {
         String client = read(PARTY.resolve("MpPartyClient.java"));
         String body = region(client, "private static void sendBatch(",
                 "房间是否正在接管播放");
 
         assertTrue(body.contains("MpProto.C_ENQUEUE_BATCH"), "走的是批量那一帧，不是逐首 enqueue");
-        assertTrue(body.contains("MpTrack.toJson(usable.get(i), \"\", 0L, 0L)"),
+        assertTrue(body.contains("MpTrack.toJson(item, \"\", 0L, 0L)"),
                 "url 传空串：链接由服务端按前瞻窗逐首向房间要，不是点歌人一次性备齐");
         assertFalse(body.contains("upload("),
                 "批量路径不许复用 upload()：那条会当场在本机解析每一首的音频");
@@ -62,8 +62,14 @@ class RoomPlaylistQueueStaticTest {
         assertTrue(body.contains("m.addProperty(\"playlist\", label)"),
                 "歌单名要发出去：界面上「这批是自动排的」与「撤回这张单」都靠它");
         assertTrue(body.contains("m.add(\"tracks\", tracks)"), "曲目是数组");
-        assertTrue(body.contains("from += BATCH_CHUNK"),
-                "要分帧：一张 500 首的单子拼成一帧会撞单帧上限");
+        assertTrue(body.contains("item.isBvLibrary() ? BvRoomTracks.prepare(item, 0L, bvSession).json()"),
+                "只有双站走准确时长和固定代理定位的准备链路，不能让普通源逐首解析");
+        assertTrue(body.contains("BvRoomBatch.send(") && body.contains("BATCH_CHUNK"),
+                "必须走有并发上限、按顺序分帧的批量发送器");
+        assertTrue(body.contains("final boolean progressive = hasControl()"),
+                "普通成员要合帧提交，避免后续帧被服务端导入冷却拦截");
+        assertTrue(body.contains("if (!progressive) limit = Math.min(limit, 200)"),
+                "普通成员还要受单帧 200 条上限约束，不能悄悄拆成触发冷却的第二帧");
     }
 
     @Test

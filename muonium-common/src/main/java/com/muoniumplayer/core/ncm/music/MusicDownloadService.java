@@ -134,7 +134,7 @@ final class MusicDownloadService {
             OutputStream output = Files.newOutputStream(music.toPath(), StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
             try {
-                writeTo(stream, output);
+                writeTo(stream, output, song);
             } finally {
                 closeQuietly(output);
                 closeQuietly(stream);
@@ -172,15 +172,20 @@ final class MusicDownloadService {
 
     @SneakyThrows
     static void writeTo(InputStream source, OutputStream destination) {
+        writeTo(source, destination, null);
+    }
+
+    @SneakyThrows
+    private static void writeTo(InputStream source, OutputStream destination, Music song) {
         byte[] buffer = new byte[TRANSFER_BUFFER_BYTES];
         int length;
         while (true) {
-            if (Thread.currentThread().isInterrupted()) {
+            if (Thread.currentThread().isInterrupted() || (song != null && song.roomAudioCancelled())) {
                 throw new java.io.InterruptedIOException("Music download cancelled");
             }
             length = source.read(buffer);
             if (length == -1) break;
-            if (Thread.currentThread().isInterrupted()) {
+            if (Thread.currentThread().isInterrupted() || (song != null && song.roomAudioCancelled())) {
                 throw new java.io.InterruptedIOException("Music download cancelled");
             }
             destination.write(buffer, 0, length);
