@@ -36,6 +36,8 @@ git config push.default simple
 git config pull.ff only
 git config branch.custom.pushRemote origin
 git fetch upstream
+git branch --track main upstream/main
+git config branch.main.pushRemote origin
 ```
 
 ## 合入作者更新
