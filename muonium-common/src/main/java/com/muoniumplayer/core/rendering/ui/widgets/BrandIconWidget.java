@@ -2,10 +2,11 @@ package com.muoniumplayer.core.rendering.ui.widgets;
 
 import com.muoniumplayer.core.ncm.music.MusicPlatform;
 import com.muoniumplayer.core.rendering.BrandVectorIcons;
+import com.muoniumplayer.core.rendering.BvLibraryBrandIcons;
 import com.muoniumplayer.core.rendering.ui.AbstractWidget;
 
 /**
- * 一枚矢量品牌标识（{@link BrandVectorIcons}）。
+ * 一枚品牌标识：原有矢量路径或两站内置 PNG。
  *
  * <p>做成组件而不是在父组件的回调里直接画：它要跟着父组件的 {@code alpha} 一起淡入淡出
  * （账号头像位的品牌层整层是靠 {@code veil} 的 alpha 切换的），而组件树的 alpha 是自动相乘的。</p>
@@ -23,8 +24,17 @@ public class BrandIconWidget extends AbstractWidget<BrandIconWidget> {
         this.setBounds(size, size);
     }
 
+    public static boolean has(MusicPlatform platform) {
+        return BvLibraryBrandIcons.has(platform) || BrandVectorIcons.has(platform);
+    }
+
     @Override
     public void onRender(double mouseX, double mouseY) {
+        if (BvLibraryBrandIcons.has(this.platform)) {
+            BvLibraryBrandIcons.drawIn(this.platform, this.getX(), this.getY(),
+                    this.getWidth(), this.getHeight(), this.getHexColor());
+            return;
+        }
         BrandVectorIcons.drawIn(this.platform, this.getX(), this.getY(),
                 this.getWidth(), this.getHeight(), this.getHexColor());
     }

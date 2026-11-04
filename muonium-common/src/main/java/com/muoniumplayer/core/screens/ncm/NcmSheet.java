@@ -974,7 +974,7 @@ public abstract class NcmSheet extends NCMPanel {
     }
 
     /**
-     * 一枚品牌标识：有矢量数据的走矢量（{@link BrandVectorIcons}），其余走字形字标。
+     * 一枚品牌标识：两站使用内置 PNG，原有平台继续使用矢量或图标字体。
      *
      * <p>尺寸按 {@link BrandVectorIcons#MARK_RATIO} 折 <b>容器</b>，而不是各自的字体实例 ——
      * 改矢量之前两家没有品牌字形，三处界面各挑了一个字号不同的正文字体来顶替，实测同一枚标识
@@ -986,7 +986,7 @@ public abstract class NcmSheet extends NCMPanel {
     protected void brandMark(final AbstractWidget<?> host, final MusicPlatform platform, final double size,
                              final String fallbackGlyph, final CFontRenderer fallbackFont,
                              final DoubleSupplier cx, final DoubleSupplier cy, final IntSupplier color) {
-        if (!BrandVectorIcons.has(platform)) {
+        if (!BrandIconWidget.has(platform)) {
             glyph(host, fallbackGlyph, fallbackFont, cx, cy, color);
             return;
         }

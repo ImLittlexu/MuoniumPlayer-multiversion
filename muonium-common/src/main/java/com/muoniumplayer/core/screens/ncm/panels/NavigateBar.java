@@ -25,7 +25,6 @@ import com.muoniumplayer.core.update.AnnouncementChecker;
 import com.muoniumplayer.core.ncm.music.NeteaseSearchSuggestService;
 import com.muoniumplayer.core.ncm.music.dto.Music;
 import com.muoniumplayer.core.ncm.music.dto.PlayList;
-import com.muoniumplayer.core.rendering.BrandVectorIcons;
 import com.muoniumplayer.core.rendering.DownloadDynamicIsland;
 import com.muoniumplayer.core.rendering.FoliaLucideIcons;
 import com.muoniumplayer.core.rendering.FontelloIcons;
@@ -1950,9 +1949,8 @@ public class NavigateBar extends NCMPanel {
             });
 
             // QQ 音乐使用其自有的服务商品牌字形。请勿复用 QQ 登录图标。
-            // 有矢量标识的那三家（BrandVectorIcons.has）就用矢量，和圆盘、引导页是同一份数据；
-            // 其余各家仍走各自的品牌字体字形。
-            this.platformIcon = BrandVectorIcons.has(this.platform)
+            // 内置 PNG 与矢量标识复用同一品牌组件，其余各家保留图标字体。
+            this.platformIcon = BrandIconWidget.has(this.platform)
                     ? new BrandIconWidget(this.platform, SOURCE_ICON_BOX)
                     : new LabelWidget(sourceGlyph(this.platform), sourceFont(this.platform));
             this.platformIcon.setClickable(false);
