@@ -169,13 +169,13 @@ dependencies {
     // 三个 artifact 的分工：
     //   skija-shared        纯 Java 绑定层（0.4 MB）
     //   types               Rect / RRect / Point 等值类型，skija-shared 的编译期依赖
-    // 原生库不再随主包内置：Windows 与其余六个平台一样走伴生包自动下载
+    // 定制主包内置 Windows x64 原生资源，其余平台保留伴生包自动下载
     // （SkijaCompanionDownload，见 docs/实现约定-渲染原生库自动下载.md）。
     // Kotlin 运行时由 Fabric Language Kotlin 统一提供，不再随本 mod 打包。
     implementation "net.fabricmc:fabric-language-kotlin:${project.fabric_language_kotlin_version}"
     implementation include('io.github.humbleui:skija-shared:0.143.17')
     implementation include('io.github.humbleui:types:0.2.0')
-    // 开发期 runClient 用：只进运行时类路径，不进成品 jar（成品全平台走伴生包自动下载）
+    // 开发期 runClient 用：平台依赖只进运行时类路径；发布包由根工程单独收集 Windows x64 原生资源
     runtimeOnly 'io.github.humbleui:skija-windows-x64:0.143.17'
     // skija-shared 的 provided 依赖，只在编译期需要（@Nullable 之类）。
     compileOnly 'org.jetbrains:annotations:20.1.0'

@@ -58,9 +58,7 @@ tasks.register('buildAll') {
 }
 
 // ==================== Skija 原生库伴生包（枪弹分离里的那发「弹」）====================
-// 主包只内置 windows-x64：五个平台全塞进一个 jar 会从 58 MB 涨到约 121 MB，
-// 越过 GitHub release 的 100 MB 单文件上限，还让占绝大多数的 Windows 用户陪着多下一半体积。
-// 所以非 Windows 平台的原生库单独出包，用户把 zip 解压到 config/muonium/native/skija/ 就行，
+// 定制主包内置 windows-x64；其它平台及手动补包沿用独立伴生包任务。
 // 模组侧的发现·校验·加载逻辑在 SkijaNativeCatalog / SkijaNatives。
 //
 // zip 内部布局就是目录契约，不要改：
@@ -69,24 +67,52 @@ tasks.register('buildAll') {
 // skija.version 必须与 libskija 放在同一层：模组拿它当「这份库是不是给我这一版用的」的硬判据
 // （JNI 符号写死类名，版本错配会炸在某个具体方法上，症状是「库加载成功了界面还是不出来」）。
 def skijaVersion = '0.143.17'
-// 七个平台全出（Windows 也在内：原生库不再随主包内置）。安卓那份 2026-10-05 真机复测通过：渲染器用 MobileGlues 并关闭 ANGLE 时，
+// 七个平台全出（含 Windows 的手动补包；定制主包已内置 Windows x64）。安卓那份 2026-10-05 真机复测通过：渲染器用 MobileGlues 并关闭 ANGLE 时，
 // Skia 的 GL 互操作完整可用——此前「MobileGlues 装不出上下文」的结论是 ANGLE 报的桌面语义
 // 版本串造成的误判。换 Krypton 包装仍可能弄坏世界贴图，风险写在停用提示与 README 里。
 def skijaCompanionPlatforms = ['windows-x64', 'linux-x64', 'linux-arm64', 'macos-x64', 'macos-arm64',
         'android-arm64', 'android-x64']
 
-configurations { skijaCompanion }
+configurations {
+    skijaCompanion { transitive = false }
+    skijaBundled { transitive = false }
+}
 repositories {
     // 与两个子工程同一套源：repo.maven.apache.org 在本机不可用，走阿里云。
     maven { url = 'https://maven.aliyun.com/repository/public' }
 }
 dependencies {
+    skijaBundled "io.github.humbleui:skija-windows-x64:${skijaVersion}"
     skijaCompanionPlatforms.each { platform ->
         skijaCompanion "io.github.humbleui:skija-${platform}:${skijaVersion}"
     }
 }
 
 def companionOutDir = new File(rootProject.projectDir, '../dist/skija-companion')
+
+// 定制启动器仅支持 Windows x64；随主包附带原生资源，首次启动只需本地解压。
+subprojects {
+    tasks.withType(ProcessResources).matching { it.name == 'processResources' }.configureEach {
+        from({ rootProject.configurations.skijaBundled.collect { rootProject.zipTree(it) } }) {
+            include 'io/github/humbleui/skija/windows/x64/**'
+        }
+        from(rootProject.file('licenses')) {
+            include 'LICENSE-Skija.txt', 'LICENSE-Skia.txt', 'NOTICE-Skija.txt'
+            into 'META-INF/licenses/skija'
+        }
+        doLast {
+            def directory = new File(destinationDir, 'io/github/humbleui/skija/windows/x64')
+            ['skija.dll', 'icudtl.dat', 'skija.version'].each { name ->
+                if (!new File(directory, name).isFile()) {
+                    throw new GradleException("内置 Windows x64 Skija 缺少 ${name}")
+                }
+            }
+            if (new File(directory, 'skija.version').getText('UTF-8').trim() != skijaVersion) {
+                throw new GradleException('内置 Windows x64 Skija 版本不匹配')
+            }
+        }
+    }
+}
 
 tasks.register('packageSkijaCompanion') {
     group = 'distribution'

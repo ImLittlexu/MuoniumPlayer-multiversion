@@ -50,9 +50,9 @@ class ThirdPartyPackagingStaticTest {
                 "skija-shared 不许回 embeddedLibs 平铺（issue #4 的 split package 就是这么来的）");
         assertFalse(build.contains("embeddedLibs 'io.github.humbleui:types"),
                 "types 不许回 embeddedLibs 平铺（issue #4 的 split package 就是这么来的）");
-        // 发布 jar 侧必须挡掉平铺的类：jar 任务 exclude io/github/humbleui/**
-        assertTrue(build.contains("exclude 'io/github/humbleui/**'"),
-                "jar 任务必须 exclude io/github/humbleui/**：flatten 产物里的这两库类只准进 dev 类路径，不准进发布 jar");
+        // 发布 jar 侧必须挡掉平铺的类：jar 任务 exclude io/github/humbleui/**/*.class
+        assertTrue(build.contains("exclude 'io/github/humbleui/**/*.class'"),
+                "jar 任务必须 exclude io/github/humbleui/**/*.class：flatten 产物里的这两库类只准进 dev 类路径，不准进发布 jar");
     }
 
     @Test

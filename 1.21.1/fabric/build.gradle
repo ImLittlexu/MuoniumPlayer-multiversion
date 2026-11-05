@@ -165,7 +165,7 @@ dependencies {
     implementation "net.fabricmc:fabric-language-kotlin:${project.fabric_language_kotlin_version}"
     implementation include('io.github.humbleui:skija-shared:0.143.17')
     implementation include('io.github.humbleui:types:0.2.0')
-    // 开发期 runClient 用：只进运行时类路径，不进成品 jar（成品全平台走伴生包自动下载）
+    // 开发期 runClient 用：平台依赖只进运行时类路径；发布包由根工程单独收集 Windows x64 原生资源
     runtimeOnly 'io.github.humbleui:skija-windows-x64:0.143.17'
     compileOnly 'org.jetbrains:annotations:20.1.0'
 

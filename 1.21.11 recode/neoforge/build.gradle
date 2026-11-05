@@ -207,9 +207,9 @@ dependencies {
     devSkija 'io.github.humbleui:skija-shared:0.143.17'
     devSkija 'io.github.humbleui:types:0.2.0'
 
-    // 开发期 runClient 用：只进运行时类路径，不进成品 jar（成品全平台走伴生包自动下载）
+    // 开发期 runClient 用：平台依赖只进运行时类路径；发布包由根工程单独收集原生资源
     runtimeOnly 'io.github.humbleui:skija-windows-x64:0.143.17'
-    // skija 的原生库不随主包内置：Windows 与其余六个平台一样走伴生包自动下载
+    // 根工程 processResources 为发布包内置 Windows x64 的原生资源。
 
     // Kotlin 运行时由前置统一提供，不再随本 mod 打包。
     implementation "thedarkcolour:kotlinforforge-neoforge:${project.kotlinforforge_version}"
@@ -329,7 +329,7 @@ jar {
     // skija-shared / types 已改走 JarJar 嵌原 jar（见 dependencies）：发布 jar 里不再平铺
     // 这两个库的类 —— 它们留在主 jar 会成为自动模块导出的包，与别的 mod 嵌的同名模块 split package。
     // flatten 产物仍含它们（dev 期编译与 runClient 还靠 classes 任务提取那一份），这里只挡发布 jar。
-    exclude 'io/github/humbleui/**'
+    exclude 'io/github/humbleui/**/*.class'
 }
 
 tasks.register('dumpCompileClasspath') {
