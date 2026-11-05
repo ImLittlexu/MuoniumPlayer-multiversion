@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.muoniumplayer.compat.lwjgl2.Keyboard;
 import com.muoniumplayer.core.MuoniumPlayerExtension;
 import com.muoniumplayer.core.MusicHotkeys;
+import com.muoniumplayer.core.MusicKeybindHint;
 import com.muoniumplayer.core.ncm.music.CloudMusic;
 import com.muoniumplayer.core.ncm.music.ExternalPlayback;
 import com.muoniumplayer.core.ncm.music.FfmpegNotice;
@@ -61,7 +62,7 @@ public final class MuoniumPlayerClient {
 
     public static final String MOD_ID = "muonium";
     public static final String MOD_NAME = "MuoniumPlayer";
-    public static final String MOD_VERSION = "2.4.4";
+    public static final String MOD_VERSION = "2.4.5";
 
     /**
      * 本工程对应的 Minecraft 版本。刻意写死而不是问原版要：共享源码不许引用加载器 API，
@@ -126,6 +127,7 @@ public final class MuoniumPlayerClient {
     private static final MuoniumPlayerClient INSTANCE = new MuoniumPlayerClient();
 
     private OpenAPIImpl api;
+    private final MusicKeybindHint keybindHint = new MusicKeybindHint();
 
     private MuoniumPlayerClient() {
     }
@@ -227,6 +229,13 @@ public final class MuoniumPlayerClient {
     public void onClientTick(Minecraft mc) {
         if (this.api == null) {
             return;
+        }
+
+        if (this.keybindHint.shouldAnnounce(mc.getConnection(),
+                mc.player != null && mc.level != null && keyOpenMusic != null && keyEditHud != null)) {
+            this.api.printMessage(MusicKeybindHint.message(
+                    keyOpenMusic.isUnbound() ? null : keyOpenMusic.getTranslatedKeyMessage().getString(),
+                    keyEditHud.isUnbound() ? null : keyEditHud.getTranslatedKeyMessage().getString()));
         }
 
         // ---- Gnetum 共存兼容：检测 + 自动关其「muonium」HUD 元素缓存 + 聊天栏告知 ----
