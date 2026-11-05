@@ -74,6 +74,24 @@ public class HomePanel extends NCMPanel {
         return this.fixedPlaylists == null;
     }
 
+    /** 在初始化和记录历史前选定真正的主页，避免把空中转页留在返回栈里。 */
+    public static NCMPanel resolvePlatformHome(NCMPanel panel) {
+        if (panel instanceof HomePanel) {
+            HomePanel home = (HomePanel) panel;
+            if (home.isDefaultHomePage() && home.platform.isBvLibrary()) {
+                GogoLibraryPanel library = new GogoLibraryPanel(home.platform);
+                library.setNavigationKey(home.getNavigationKey());
+                return library;
+            }
+        }
+        return panel;
+    }
+
+    public static boolean isDefaultHome(NCMPanel panel) {
+        return panel instanceof GogoLibraryPanel
+                || (panel instanceof HomePanel && ((HomePanel) panel).isDefaultHomePage());
+    }
+
     private static final int NETEASE_HOME_TARGET = 240;
     private static final int NETEASE_PAGE_SIZE = 50;
     private static final ArrayList<PlayList> playLists = new ArrayList<>();
@@ -123,10 +141,6 @@ public class HomePanel extends NCMPanel {
 
     @Override
     public void onInit() {
-        if (platform.isBvLibrary() && fixedPlaylists == null) {
-            NCMScreen.getInstance().replaceCurrentPanel(new GogoLibraryPanel(platform));
-            return;
-        }
         if (fixedPlaylists != null) {
             layout(fixedPlaylists, fixedRecommendationTitle == null || fixedRecommendationTitle.trim().isEmpty()
                     ? "歌单搜索" : fixedRecommendationTitle);

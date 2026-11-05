@@ -1062,10 +1062,11 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
     }
 
     public void setCurrentPanel(NCMPanel panel) {
-        this.innerSetCurrentPanel(panel, true);
+        final NCMPanel target = HomePanel.resolvePlatformHome(panel);
+        this.innerSetCurrentPanel(target, true);
 
-        if (panel != null) {
-            Runnable action = () -> this.innerSetCurrentPanel(panel, false);
+        if (target != null) {
+            Runnable action = () -> this.innerSetCurrentPanel(target, false);
 
             if (actions.isEmpty()) {
                 currentActionPointer = 0;
@@ -1092,10 +1093,11 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
      * 会退回那个中转页，它的 {@code onInit} 又重新加载一次再把人送走 —— 返回键看起来失效。</p>
      */
     public void replaceCurrentPanel(NCMPanel panel) {
-        this.innerSetCurrentPanel(panel, true);
-        if (panel == null) return;
+        final NCMPanel target = HomePanel.resolvePlatformHome(panel);
+        this.innerSetCurrentPanel(target, true);
+        if (target == null) return;
 
-        Runnable action = () -> this.innerSetCurrentPanel(panel, false);
+        Runnable action = () -> this.innerSetCurrentPanel(target, false);
         if (actions.isEmpty()) {
             currentActionPointer = 0;
             actions.add(action);
@@ -1284,7 +1286,7 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
      * 打开“加入歌单”弹窗。由 MusicWidget 的「+」按钮调用。
      * 复用原项目 PlayList.addToList(musicId) → CloudMusicApi.playlistTracks("add", pid, musicId)。
      */
-        if (!(this.currentPanel instanceof HomePanel)) {
+        if (!HomePanel.isDefaultHome(this.currentPanel)) {
             NCMPanel from = this.currentPanel;
             this.pendingNavigationBackward = true;
             this.setCurrentPanel(new HomePanel());

@@ -114,6 +114,11 @@ public final class GogoLibraryPanel extends NCMPanel {
     firstPage();
   }
 
+  private void clearSearch() {
+    search.setText("");
+    submit();
+  }
+
   @Override
   public boolean onKeyTypedReceived(char character, int key) {
     if (search != null && search.isFocused() && key == Keyboard.KEY_RETURN) {
@@ -156,9 +161,18 @@ public final class GogoLibraryPanel extends NCMPanel {
     search = new TextFieldWidget(FontManager.pf14);
     addChild(search);
     search.setText(keyword).setPlaceholder(playlists ? "搜索歌单 / 创建者" : "搜索歌名 / 原唱");
+    search.setColor(0xFFFFFFFF);
     search.setBeforeRenderCallback(
-        () -> search.setBounds(12, 44, Math.max(60, getWidth() - 112), 26));
-    button(this, () -> "搜索", () -> getWidth() - 90, () -> 44, () -> 78, this::submit, () -> false);
+        () -> search.setBounds(12, 44, Math.max(60, getWidth() - 168), 26));
+    button(this, () -> "搜索", () -> getWidth() - 146, () -> 44, () -> 64, this::submit, () -> false);
+    button(
+        this,
+        () -> "清空",
+        () -> getWidth() - 76,
+        () -> 44,
+        () -> 64,
+        this::clearSearch,
+        () -> false);
     if (playlists) {
       control(
           0,
@@ -385,8 +399,7 @@ public final class GogoLibraryPanel extends NCMPanel {
                   list.setMusics(new java.util.concurrent.CopyOnWriteArrayList<>(tracks));
                   list.setMusicsLoaded(true);
                   list.setMusicsQueried(true);
-                  loading = false;
-                  status = "";
+                  finishPlaylistLoading();
                   NCMScreen.getInstance().setCurrentPanel(new PlaylistPanel(list));
                 });
           } catch (Exception error) {
@@ -400,6 +413,14 @@ public final class GogoLibraryPanel extends NCMPanel {
                 });
           }
         });
+  }
+
+  private void finishPlaylistLoading() {
+    loading = false;
+    failed = false;
+    status = "";
+    // 历史返回不会再次 onInit；离开前必须把加载转子换回可用的歌单列表。
+    layout();
   }
 
   private static String songSortLabel(String key) {

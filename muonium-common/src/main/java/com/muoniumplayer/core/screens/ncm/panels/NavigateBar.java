@@ -969,7 +969,7 @@ public class NavigateBar extends NCMPanel {
                     () -> "主页", () -> {
                         NCMScreen screen = NCMScreen.getInstance();
                         NCMPanel current = screen.getCurrentPanel();
-                        if (current instanceof HomePanel && ((HomePanel) current).isDefaultHomePage()) return;
+                        if (HomePanel.isDefaultHome(current)) return;
                         screen.setCurrentPanel(new HomePanel());
                     });
             item.setSelected(true);
@@ -2776,12 +2776,10 @@ public class NavigateBar extends NCMPanel {
                 selectedItem = (PlaylistItem) entry;
             }
         }
-        if (selectedItem == null && panel instanceof HomePanel) {
+        if (selectedItem == null && HomePanel.isDefaultHome(panel)) {
             // 只有真正的默认主页才能直接落到“主页”。固定结果页（排行榜/电台/搜索）由语义键负责，
             // 没有键时宁可不高亮，也不要误把结果页画成主页。
-            if (((HomePanel) panel).isDefaultHomePage()) {
-                selectedItem = this.homeItem;
-            }
+            selectedItem = this.homeItem;
         } else if (selectedItem == null && panel instanceof PlaylistPanel) {
             PlayList activePlaylist = ((PlaylistPanel) panel).playList;
             if (activePlaylist != null && !activePlaylist.isSearchMode()) {
