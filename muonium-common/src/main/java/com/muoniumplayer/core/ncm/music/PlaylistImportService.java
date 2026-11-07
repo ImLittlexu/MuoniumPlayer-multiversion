@@ -26,9 +26,8 @@ import java.util.regex.Pattern;
  * 全渠道歌单导入：粘贴任意一段分享文案，自动识别平台、自动解析歌单。
  *
  * 「链接 → 歌单元数据」解析，不需要登录、不选来源渠道。这里只在两处比上游收紧：
- * 识别出的平台必须落在本项目已接线的渠道里（YouTube 没有歌单对象，直接拒），
- * 以及抓到的元数据只落成引用——曲目点开时才由 {@link PlayList#queryMusics()}
- * 按平台懒加载，导入这一步永远不碰曲库。</p>
+ * 识别出的平台必须落在本项目已接线的渠道里。持久化只保存引用；GOGO/UNM 在导入时
+ * 加载完整快照，其余平台沿既有路径按需加载曲目。</p>
  *
  * <p>元数据抓取失败不阻断导入：标题兜底成「平台名 + ID」，曲目照样能点开拉取。
  * 上游接口对匿名请求的字段完整性没有承诺，为一行歌单名让整个链接失效得不偿失。</p>
@@ -87,6 +86,13 @@ public final class PlaylistImportService {
      */
     public static PlayList importPlaylist(String rawInput) {
         Detection detection = detect(rawInput);
+        if (detection.platform.isBvLibrary()) {
+            try {
+                return GogoMusicService.playlistSnapshot(detection.platform, detection.cleaned);
+            } catch (java.io.IOException failure) {
+                throw new IllegalArgumentException(failure.getMessage());
+            }
+        }
         if (detection.platform == MusicPlatform.QISHUI) {
             // 汽水自己那条链已带重定向解析与兜底，不在外层再套一层重试。
             return QishuiMusicService.importPlaylist(detection.cleaned);
@@ -157,6 +163,8 @@ public final class PlaylistImportService {
         String text = rawInput == null ? "" : rawInput.trim();
         if (text.isEmpty()) throw new IllegalArgumentException("请先粘贴歌单分享链接");
         String link = firstLink(text);
+        Detection library = detectBvLibrary(link);
+        if (library != null) return library;
         String haystack = (link.isEmpty() ? text : link).toLowerCase(Locale.ROOT);
 
         if (containsAny(haystack, "youtube.com", "youtu.be", "music.youtube")) {
@@ -244,6 +252,46 @@ public final class PlaylistImportService {
             end++;
         }
         return text.substring(start, end);
+    }
+
+    private static Detection detectBvLibrary(String link) {
+        if (link.isEmpty()) return null;
+        try {
+            URI uri = URI.create(link);
+            String host = uri.getHost();
+            if (host == null) return null;
+            host = host.toLowerCase(Locale.ROOT);
+            MusicPlatform platform;
+            if (host.equals("ggd.fan") || host.equals("api.ggd.fan")) platform = MusicPlatform.GOGO;
+            else if (host.equals("unm.fan") || host.equals("api.unm.fan")) platform = MusicPlatform.UNM;
+            else return null;
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null
+                    || (uri.getPort() != -1 && uri.getPort() != 443))
+                throw new IllegalArgumentException("请使用有效的双站 HTTPS 分享链接");
+            boolean api = host.startsWith("api.");
+            String path = uri.getRawPath();
+            // 双站也会分享 API 域名下的页面式路径；取数据仍归一到固定 API。
+            String playlistPrefix = api && !path.startsWith("/playlist/") ? "/api/playlists/" : "/playlist/";
+            String favoritesPrefix = api ? "/api/shares/favorites/" : "/share/favorites/";
+            if (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+            if (path.startsWith(playlistPrefix)) {
+                String id = path.substring(playlistPrefix.length());
+                try {
+                    return new Detection(platform, GogoMusicService.positiveId(id));
+                } catch (java.io.IOException invalid) {
+                    throw new IllegalArgumentException("无效的双站歌单 ID");
+                }
+            }
+            if (path.startsWith(favoritesPrefix)) {
+                String token = path.substring(favoritesPrefix.length());
+                if (token.matches("[A-Za-z0-9_-]+"))
+                    return new Detection(platform, GogoMusicService.FAVORITES_PREFIX + token);
+            }
+            throw new IllegalArgumentException("请粘贴普通歌单或个人收藏分享链接");
+        } catch (IllegalArgumentException invalid) {
+            // URI 自身的异常可能包含分享 token，不透传。
+            throw new IllegalArgumentException("无效的歌单链接，请使用完整的 HTTPS 歌单或收藏分享链接");
+        }
     }
 
     private static boolean containsAny(String text, String... markers) {

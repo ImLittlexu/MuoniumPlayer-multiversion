@@ -1179,7 +1179,7 @@ public class NavigateBar extends NCMPanel {
             PlaylistItem item = new PlaylistItem("D",
                     () -> NCMScreen.getColor(NCMScreen.ColorType.SECONDARY_TEXT),
                     ready::getName,
-                    () -> NCMScreen.getInstance().setCurrentPanel(new PlaylistPanel(ready)));
+                    () -> openImportedPlaylist(ready));
             item.setPlaylist(ready);
             item.setShouldOverrideMouseCursor(true);
             item.setOnSecondaryClick(() -> removeImportedPlaylist(ready));
@@ -2712,6 +2712,29 @@ public class NavigateBar extends NCMPanel {
         List<PlayList> radios = QishuiMusicService.recommendRadios(80);
         if (radios.isEmpty()) return null;
         return new HomePanel(radios, "汽水电台 · " + radios.size());
+    }
+
+    private void openImportedPlaylist(PlayList reference) {
+        NCMScreen screen = NCMScreen.getInstance();
+        if (!reference.getPlatform().isBvLibrary()) {
+            screen.setCurrentPanel(new PlaylistPanel(reference));
+            return;
+        }
+        // requestKey 仅供导航去重，不能把收藏 token 当作加载提示或日志标签。
+        screen.navigateAsync(reference.getPlatform().getDisplayName() + "歌单",
+                ImportedPlaylistStore.keyOf(reference), () -> {
+                    try {
+                        return new PlaylistPanel(com.muoniumplayer.core.ncm.music.GogoMusicService
+                                .playlistSnapshot(reference.getPlatform(), reference.getPlatformPlaylistId()));
+                    } catch (java.io.IOException failure) {
+                        throw new IllegalArgumentException(failure.getMessage());
+                    }
+                }, panel -> {
+                    PlayList snapshot = ((PlaylistPanel) panel).playList;
+                    if (!ImportedPlaylistStore.replaceIfCurrent(reference, snapshot)) return false;
+                    screen.markDirty();
+                    return true;
+                });
     }
 
     /** 移除一条本地导入的歌单引用（右键触发）；不影响上游，也不涉及账号。 */

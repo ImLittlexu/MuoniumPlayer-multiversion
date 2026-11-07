@@ -1121,12 +1121,17 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
      *               所以 loader 里只该取数据、不要碰 GL
      */
     public void navigateAsync(String label, Supplier<NCMPanel> loader) {
+        navigateAsync(label, label, loader, panel -> true);
+    }
+
+    public void navigateAsync(String label, String requestKey, Supplier<NCMPanel> loader,
+                              java.util.function.Predicate<NCMPanel> beforeOpen) {
         if (loader == null) return;
         final String targetName = label == null ? "" : label;
         // 同一入口去重；点击别的栏目则以新请求为准，不能被慢音源锁住。
-        if (this.navigationLoading.isLoading() && targetName.equals(this.pendingNavigationLabel)) return;
+        if (this.navigationLoading.isLoading() && java.util.Objects.equals(requestKey, this.pendingNavigationLabel)) return;
         final long ticket = this.navigationRequests.begin();
-        this.pendingNavigationLabel = targetName;
+        this.pendingNavigationLabel = requestKey;
         this.navigationLoading.beginLoading(targetName);
         MultiThreadingUtil.runAsync(() -> {
             NCMPanel loaded = null;
@@ -1141,7 +1146,7 @@ public class NCMScreen extends ExtensionScreen implements SharedConstants, Share
             final String error = failure;
             MultiThreadingUtil.runOnMainThread(() -> {
                 if (!this.navigationRequests.isCurrent(ticket)) return;
-                if (panel != null) {
+                if (panel != null && beforeOpen.test(panel)) {
                     this.navigationLoading.clear();
                     this.setCurrentPanel(panel);
                     return;

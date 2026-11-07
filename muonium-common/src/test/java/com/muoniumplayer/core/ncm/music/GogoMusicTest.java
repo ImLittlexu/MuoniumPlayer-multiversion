@@ -15,6 +15,204 @@ import org.junit.jupiter.api.io.TempDir;
 class GogoMusicTest {
   @TempDir Path temp;
 
+  @Test
+  @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "MUONIUM_IMPORT_LIVE", matches = "1")
+  void liveAnonymousPlaylistSnapshots() throws Exception {
+    for (MusicPlatform platform : List.of(MusicPlatform.GOGO, MusicPlatform.UNM)) {
+      var lists = GogoMusicService.playlists(platform, "", "hot", 1);
+      assertFalse(lists.items.isEmpty());
+      var snapshot = GogoMusicService.playlistSnapshot(platform, lists.items.get(0).getPlatformPlaylistId());
+      assertTrue(snapshot.musicsLoaded);
+      assertEquals(snapshot.getCount(), snapshot.getMusics().size());
+      System.out.println(platform.name() + " ordinary snapshot tracks=" + snapshot.getCount());
+    }
+    String link = System.getenv("GOGO_FAVORITES_PROBE_LINK");
+    assertNotNull(link, "请通过环境变量提供收藏分享链接");
+    var favorites = PlaylistImportService.importPlaylist(link);
+    assertEquals(MusicPlatform.GOGO, favorites.getPlatform());
+    assertTrue(favorites.musicsLoaded);
+    assertFalse(favorites.getMusics().isEmpty());
+    System.out.println("GOGO favorites snapshot tracks=" + favorites.getCount());
+    String unmFavorites = System.getenv("UNM_FAVORITES_PROBE_LINK");
+    if (unmFavorites != null) {
+      String unmPlaylist = System.getenv("UNM_PLAYLIST_PROBE_LINK");
+      assertNotNull(unmPlaylist, "请同时提供 UNM 公开歌单链接");
+      for (String unmLink : List.of(unmPlaylist, unmFavorites)) {
+        var snapshot = PlaylistImportService.importPlaylist(unmLink);
+        assertEquals(MusicPlatform.UNM, snapshot.getPlatform());
+        assertTrue(snapshot.musicsLoaded);
+        assertFalse(snapshot.getMusics().isEmpty());
+        assertEquals(snapshot.getCount(), snapshot.getMusics().size());
+        assertFalse(snapshot.getName().isBlank());
+        for (Music track : snapshot.getMusics()) {
+          assertEquals(MusicPlatform.UNM, track.getSource());
+          assertTrue(GogoMusicService.validLocator(track.getGogoBvid(), track.getGogoCid()));
+        }
+        System.out.println("UNM " + (snapshot.getPlatformPlaylistId().startsWith("favorites:")
+            ? "favorites" : "ordinary") + " shared snapshot tracks=" + snapshot.getCount());
+      }
+    }
+  }
+
+  @Test
+  void importLinksRecognizeBothSitesAndPreserveTokenCase() {
+    for (String domain : List.of("ggd.fan", "unm.fan")) {
+      MusicPlatform platform = domain.equals("ggd.fan") ? MusicPlatform.GOGO : MusicPlatform.UNM;
+      for (String link : List.of("https://" + domain + "/playlist/28/",
+          "https://api." + domain + "/playlist/28/",
+          "https://api." + domain + "/api/playlists/28?from=share#top")) {
+        var found = PlaylistImportService.detect("BV1ETsX61EyX 分享 " + link);
+        assertEquals(platform, found.platform);
+        assertEquals("28", found.cleaned);
+      }
+      for (String link : List.of("https://" + domain + "/share/favorites/AbC_-123/",
+          "https://api." + domain + "/api/shares/favorites/AbC_-123?from=share")) {
+        var found = PlaylistImportService.detect(link);
+        assertEquals(platform, found.platform);
+        assertEquals("favorites:AbC_-123", found.cleaned);
+      }
+    }
+    for (String link : List.of("https://ggd.fan.evil.test/playlist/28",
+        "https://ggd.fan/playlist/0", "https://ggd.fan/playlist/9223372036854775808",
+        "https://ggd.fan/share/favorites/a%2Fb", "https://unm.fan/share/favorites/",
+        "https://ggd.fan@evil.test/playlist/28", "https://ggd.fan:123/playlist/28"))
+      assertThrows(IllegalArgumentException.class, () -> PlaylistImportService.detect(link), link);
+  }
+
+  private static JsonObject favorites() {
+    JsonObject data = json("{\"title\":\"收藏测试\",\"coverUrl\":\"\",\"items\":[],"
+        + "\"pagination\":{\"page\":1,\"total\":2,\"totalPages\":1}}");
+    JsonObject first = record("11");
+    first.addProperty("coverUrl", "http://example.test/cover.png");
+    data.getAsJsonArray("items").add(first);
+    data.getAsJsonArray("items").add(record("12"));
+    return data;
+  }
+
+  @Test
+  void snapshotsKeepOrderIdentityAndRoundTripOnlyReferences() throws Exception {
+    for (MusicPlatform platform : List.of(MusicPlatform.GOGO, MusicPlatform.UNM)) {
+      var snapshot = GogoMusicService.parsePlaylistSnapshot(favorites(), platform, "favorites:AbC_123");
+      assertEquals("收藏测试", snapshot.getName());
+      assertEquals("https://example.test/cover.png", snapshot.getCoverUrl());
+      assertEquals(2, snapshot.getCount());
+      assertEquals("11", snapshot.getMusics().get(0).getGogoCid());
+      assertEquals("12", snapshot.getMusics().get(1).getGogoCid());
+      assertTrue(snapshot.musicsLoaded && snapshot.musicsQueried);
+      assertEquals(platform, snapshot.getMusics().get(0).getSource());
+      var serialize = ImportedPlaylistStore.class.getDeclaredMethod("serialize", snapshot.getClass());
+      var deserialize = ImportedPlaylistStore.class.getDeclaredMethod("deserialize", JsonObject.class);
+      serialize.setAccessible(true);
+      deserialize.setAccessible(true);
+      JsonObject stored = (JsonObject) serialize.invoke(null, snapshot);
+      assertFalse(stored.has("items") || stored.has("songs") || stored.has("musics"));
+      var restored = (com.muoniumplayer.core.ncm.music.dto.PlayList) deserialize.invoke(null, stored);
+      assertEquals(ImportedPlaylistStore.keyOf(snapshot), ImportedPlaylistStore.keyOf(restored));
+      assertEquals(snapshot.getId(), restored.getId());
+      assertEquals("/api/shares/favorites/AbC_123", GogoMusicService.playlistPath(restored.getPlatformPlaylistId()));
+    }
+    assertNotEquals(GogoMusicService.parsePlaylistSnapshot(favorites(), MusicPlatform.GOGO, "favorites:AbC_123").getId(),
+        GogoMusicService.parsePlaylistSnapshot(favorites(), MusicPlatform.UNM, "favorites:AbC_123").getId());
+  }
+
+  @Test
+  void emptyMalformedIncompleteAndMismatchedSnapshotsAreDistinct() throws Exception {
+    var empty = GogoMusicService.parsePlaylistSnapshot(json("{\"items\":[]}"), MusicPlatform.GOGO, "favorites:Empty");
+    assertEquals("GOGO娱乐收藏", empty.getName());
+    assertTrue(empty.getMusics().isEmpty());
+    for (String body : List.of("{}", "{\"items\":null}", "{\"items\":{}}",
+        "{\"items\":[],\"pagination\":{\"total\":10,\"totalPages\":2}}"))
+      assertThrows(IOException.class, () -> GogoMusicService.parsePlaylistSnapshot(json(body), MusicPlatform.GOGO, "favorites:A"));
+    JsonObject broken = favorites();
+    broken.getAsJsonArray("items").get(0).getAsJsonObject().remove("bv");
+    assertThrows(IOException.class, () -> GogoMusicService.parsePlaylistSnapshot(broken, MusicPlatform.GOGO, "favorites:A"));
+    assertThrows(IOException.class, () -> GogoMusicService.parsePlaylistSnapshot(json("{\"id\":2,\"songs\":[]}"), MusicPlatform.UNM, "1"));
+    var ordinary = GogoMusicService.parsePlaylistSnapshot(json("{\"id\":1,\"songs\":[]}"), MusicPlatform.UNM, "1");
+    assertEquals(1L, ordinary.getId());
+    assertEquals("UNM小站歌单", ordinary.getName());
+  }
+
+  @Test
+  void refreshCreatesIndependentSnapshotsAndStaleReferencesCannotBeRestored() throws Exception {
+    var original = GogoMusicService.parsePlaylistSnapshot(favorites(), MusicPlatform.GOGO, "favorites:Test");
+    JsonObject changed = favorites();
+    changed.addProperty("title", "新的收藏");
+    changed.addProperty("coverUrl", "https://example.test/new.png");
+    changed.getAsJsonArray("items").remove(1);
+    changed.getAsJsonObject("pagination").addProperty("total", 1);
+    var refreshed = GogoMusicService.parsePlaylistSnapshot(changed, MusicPlatform.GOGO, "favorites:Test");
+    assertEquals(original.getId(), refreshed.getId());
+    assertNotEquals(original.getCoverLocation(), refreshed.getCoverLocation());
+    assertEquals(2, original.getMusics().size());
+    assertEquals(1, refreshed.getMusics().size());
+    assertNotSame(original.getMusics(), refreshed.getMusics());
+
+    var loaded = ImportedPlaylistStore.class.getDeclaredField("loaded");
+    var playlists = ImportedPlaylistStore.class.getDeclaredField("PLAYLISTS");
+    loaded.setAccessible(true);
+    playlists.setAccessible(true);
+    boolean wasLoaded = loaded.getBoolean(null);
+    @SuppressWarnings("unchecked")
+    Map<String, com.muoniumplayer.core.ncm.music.dto.PlayList> records =
+        (Map<String, com.muoniumplayer.core.ncm.music.dto.PlayList>) playlists.get(null);
+    var saved = new LinkedHashMap<>(records);
+    try {
+      loaded.setBoolean(null, true);
+      records.clear();
+      assertFalse(ImportedPlaylistStore.replaceIfCurrent(original, refreshed));
+      records.put(ImportedPlaylistStore.keyOf(refreshed), refreshed);
+      assertFalse(ImportedPlaylistStore.replaceIfCurrent(original, original));
+      assertSame(refreshed, records.get(ImportedPlaylistStore.keyOf(original)));
+    } finally {
+      records.clear();
+      records.putAll(saved);
+      loaded.setBoolean(null, wasLoaded);
+    }
+  }
+
+  @Test
+  void snapshotHttpUsesOneAnonymousGetAndHidesTokensInErrors() throws Exception {
+    var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    AtomicInteger calls = new AtomicInteger();
+    List<String> credentials = new ArrayList<>();
+    server.createContext("/api/shares/favorites/TestToken", exchange -> {
+      calls.incrementAndGet();
+      credentials.add(exchange.getRequestHeaders().getFirst("Authorization"));
+      credentials.add(exchange.getRequestHeaders().getFirst("Cookie"));
+      byte[] body = ("{\"success\":true,\"code\":2000,\"data\":" + favorites() + "}").getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.createContext("/api/shares/favorites/InvalidToken", exchange -> {
+      exchange.sendResponseHeaders(404, -1);
+      exchange.close();
+    });
+    server.createContext("/api/shares/favorites/BusinessToken", exchange -> {
+      byte[] body = "{\"success\":false,\"code\":4004,\"message\":\"BusinessToken\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+    try {
+      var client = new GogoApiClient("http://127.0.0.1:" + server.getAddress().getPort());
+      var snapshot = GogoMusicService.playlistSnapshot(MusicPlatform.GOGO, "favorites:TestToken", client);
+      assertEquals(2, snapshot.getMusics().size());
+      snapshot.loadMusicsWithCallback(tracks -> assertEquals(2, tracks.size()));
+      assertEquals(1, calls.get());
+      assertTrue(credentials.stream().allMatch(Objects::isNull));
+      for (String token : List.of("InvalidToken", "BusinessToken")) {
+        IOException failure = assertThrows(IOException.class,
+            () -> GogoMusicService.playlistSnapshot(MusicPlatform.UNM, "favorites:" + token, client));
+        assertEquals("分享链接不存在或已失效", failure.getMessage());
+        assertNull(failure.getCause());
+      }
+    } finally {
+      server.stop(0);
+    }
+  }
+
   static JsonObject json(String text) {
     return JsonParser.parseString(text).getAsJsonObject();
   }

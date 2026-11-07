@@ -226,7 +226,8 @@ class PlaylistImportStaticTest {
         assertTrue(source.contains("ImportedPlaylistStore.add"), "面板没有把引用存进本地库");
         assertTrue(source.contains("fillFromClipboard"), "缺少「粘贴」按钮逻辑");
         assertTrue(source.contains("Keyboard.KEY_RETURN"), "输入框回车没有接导入");
-        assertTrue(source.contains("YouTube"), "面板里没写 YouTube 不支持");
+        assertTrue(source.contains("GOGO / UNM") && source.contains("收藏分享"),
+                "导入提示应说明双站普通歌单和收藏分享");
         assertFalse(source.contains("getCookieHeader"), "面板不得携带登录 Cookie —— 需求是匿名、不进账号");
         assertFalse(source.contains("QISHUI_AUTH"), "面板不得触碰账号凭据文件");
     }

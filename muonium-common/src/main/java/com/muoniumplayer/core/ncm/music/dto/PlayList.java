@@ -86,7 +86,10 @@ public class PlayList {
 
     public final Location getCoverLocation() {
         String source = getPlatform().name().toLowerCase(java.util.Locale.ROOT);
-        return Location.of("muonium/textures/playlist/" + source + "/" + this.id + "/cover.png");
+        // 双站刷新会换封面；按 URL 区分纹理，历史页仍保留原先的封面快照。
+        String artwork = getPlatform().isBvLibrary()
+                ? "/" + Integer.toUnsignedString(Objects.hashCode(coverUrl), 16) : "";
+        return Location.of("muonium/textures/playlist/" + source + "/" + this.id + artwork + "/cover.png");
     }
 
     public MusicPlatform getPlatform() {

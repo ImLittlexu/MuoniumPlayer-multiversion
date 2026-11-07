@@ -86,6 +86,19 @@ public final class ImportedPlaylistStore {
         }
     }
 
+    /** 只替换仍然是本次请求起点的引用，避免删除或重新导入后被迟到结果覆盖。 */
+    public static boolean replaceIfCurrent(PlayList expected, PlayList replacement) {
+        load();
+        synchronized (LOCK) {
+            String key = keyOf(expected);
+            if (key == null || !key.equals(keyOf(replacement)) || PLAYLISTS.get(key) != expected)
+                return false;
+            PLAYLISTS.put(key, replacement);
+            save();
+            return true;
+        }
+    }
+
     /** 按歌单自身（平台 + 平台歌单 ID）移除本地引用；不影响上游，也不涉及账号。 */
     public static void remove(PlayList playlist) {
         String key = keyOf(playlist);

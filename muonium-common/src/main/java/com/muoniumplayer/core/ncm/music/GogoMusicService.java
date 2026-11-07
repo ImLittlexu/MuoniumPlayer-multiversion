@@ -106,9 +106,7 @@ public final class GogoMusicService {
   }
 
   public static List<Music> playlistSongs(MusicPlatform platform, String id) throws IOException {
-    JsonObject data =
-        GogoApiClient.forPlatform(platform).get("/api/playlists/" + positiveId(id), Map.of());
-    return parsePlaylistSongs(data, platform);
+    return playlistSnapshot(platform, id).getMusics();
   }
 
   static List<Music> parsePlaylistSongs(JsonObject data) throws IOException {
@@ -121,8 +119,97 @@ public final class GogoMusicService {
     for (JsonElement item : array(data, "songs")) entries.add(item.getAsJsonObject());
     entries.sort(Comparator.comparingInt(item -> number(item, "sortOrder")));
     List<Music> songs = new ArrayList<>();
-    for (JsonObject entry : entries) songs.add(song(object(entry, "song"), platform));
+    for (JsonObject entry : entries) songs.add(snapshotSong(object(entry, "song"), platform));
     return songs;
+  }
+
+  public static final String FAVORITES_PREFIX = "favorites:";
+
+  static String playlistPath(String id) throws IOException {
+    if (id != null && id.startsWith(FAVORITES_PREFIX)) {
+      String token = id.substring(FAVORITES_PREFIX.length());
+      if (!token.matches("[A-Za-z0-9_-]+")) throw new IOException("无效的收藏分享链接");
+      return "/api/shares/favorites/" + token;
+    }
+    return "/api/playlists/" + positiveId(id);
+  }
+
+  public static PlayList playlistSnapshot(MusicPlatform platform, String id) throws IOException {
+    return playlistSnapshot(platform, id, GogoApiClient.forPlatform(platform));
+  }
+
+  static PlayList playlistSnapshot(MusicPlatform platform, String id, GogoApiClient api)
+      throws IOException {
+    String path = playlistPath(id);
+    boolean favorites = id.startsWith(FAVORITES_PREFIX);
+    try {
+      return parsePlaylistSnapshot(api.get(path, Map.of()), platform, id);
+    } catch (IOException failure) {
+      // 分享 token 是读取凭证，网络异常和服务端消息均不得把它带入日志。
+      String reason = failure.getMessage();
+      if (favorites && (reason != null && (reason.contains("404") || reason.contains("4004"))))
+        throw new IOException("分享链接不存在或已失效");
+      if (failure instanceof java.io.InterruptedIOException) {
+        Thread.currentThread().interrupt();
+        throw new java.io.InterruptedIOException("歌单加载已取消");
+      }
+      throw new IOException("歌单加载失败，请检查网络、访问权限或返回数据");
+    } catch (RuntimeException malformed) {
+      throw new IOException("歌单返回数据格式错误");
+    }
+  }
+
+  static PlayList parsePlaylistSnapshot(JsonObject data, MusicPlatform platform, String id)
+      throws IOException {
+    playlistPath(id);
+    boolean favorites = id.startsWith(FAVORITES_PREFIX);
+    List<Music> tracks;
+    try {
+      if (favorites) {
+        JsonArray items = requiredArray(data, "items");
+        if (data.has("pagination")) {
+          JsonObject pagination = object(data, "pagination");
+          if (number(pagination, "total") != items.size()
+              || number(pagination, "totalPages") > 1 || number(pagination, "page") > 1)
+            throw new IOException("收藏分享未返回完整曲目");
+        }
+        tracks = new ArrayList<>();
+        for (JsonElement item : items) tracks.add(snapshotSong(item.getAsJsonObject(), platform));
+      } else {
+        if (!positiveId(text(data, "id")).equals(id)) throw new IOException("歌单 ID 不匹配");
+        requiredArray(data, "songs");
+        tracks = parsePlaylistSongs(data, platform);
+      }
+      String title = text(data, "title").trim();
+      if (title.isEmpty()) title = platform.getDisplayName() + (favorites ? "收藏" : "歌单");
+      String cover = text(data, "coverUrl").replace("http://", "https://");
+      if (cover.isEmpty() && !tracks.isEmpty()) cover = tracks.get(0).getExternalCoverUrl();
+      long key = favorites
+          ? Math.max(1L, PlaylistImportService.stableLong(platform.name() + ":" + id))
+          : Long.parseLong(id);
+      PlayList result = new PlayList(key, title, cover, tracks.size(), 0L, null, "", 0L);
+      result.setPlatform(platform);
+      result.setPlatformPlaylistId(id);
+      result.musics = new CopyOnWriteArrayList<>(tracks);
+      result.musicsQueried = true;
+      result.musicsLoaded = true;
+      return result;
+    } catch (RuntimeException malformed) {
+      throw new IOException("歌单返回数据格式错误");
+    }
+  }
+
+  private static JsonArray requiredArray(JsonObject data, String field) throws IOException {
+    if (!data.has(field) || !data.get(field).isJsonArray())
+      throw new IOException("歌单缺少曲目列表");
+    return data.getAsJsonArray(field);
+  }
+
+  private static Music snapshotSong(JsonObject item, MusicPlatform platform) throws IOException {
+    if (text(item, "songName").trim().isEmpty()
+        || !item.has("originalArtist") || !item.get("originalArtist").isJsonArray())
+      throw new IOException("歌曲信息不完整");
+    return song(item, platform);
   }
 
   public static void ensureLocator(Music song) throws IOException {
@@ -148,6 +235,11 @@ public final class GogoMusicService {
 
   static String positiveId(String id) throws IOException {
     if (id == null || !id.matches("[1-9][0-9]*")) throw new IOException("无效的曲库歌曲或歌单 ID");
+    try {
+      Long.parseLong(id);
+    } catch (NumberFormatException overflow) {
+      throw new IOException("曲库 ID 超出支持范围");
+    }
     return id;
   }
 

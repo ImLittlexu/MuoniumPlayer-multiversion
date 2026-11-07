@@ -79,7 +79,8 @@ public final class GogoApiClient {
           || !envelope.get("success").getAsBoolean()
           || !envelope.has("code")
           || envelope.get("code").getAsInt() != 2000)
-        throw new IOException(GogoMusicService.text(envelope, "message"));
+        throw new IOException("4004".equals(GogoMusicService.text(envelope, "code"))
+            ? "业务错误 4004" : GogoMusicService.text(envelope, "message"));
       return envelope.has("data") && envelope.get("data").isJsonObject()
           ? envelope.getAsJsonObject("data")
           : new JsonObject();

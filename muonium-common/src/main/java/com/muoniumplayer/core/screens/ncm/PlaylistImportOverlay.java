@@ -46,7 +46,7 @@ public final class PlaylistImportOverlay extends NcmSheet {
     private static final int TONE_BUSY = 3;
 
     private static final String IDLE_TEXT =
-            "自动识别平台 · 支持网易云 / QQ / 酷狗 / B 站 / 汽水 · YouTube 歌单暂不支持导入";
+            "支持多平台歌单 · GOGO / UNM 支持普通歌单与收藏分享";
 
     private TextFieldWidget input;
     /** 后台解析进行中：挡住重复提交，也让按钮文案换成「正在导入…」。 */
