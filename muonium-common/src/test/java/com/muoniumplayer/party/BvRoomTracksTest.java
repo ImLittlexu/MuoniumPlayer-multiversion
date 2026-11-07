@@ -183,7 +183,7 @@ class BvRoomTracksTest {
     List<Music> songs = new ArrayList<>();
     for (int i = 1; i <= 8; i++) songs.add(song("gogo", "" + i, null, i));
     AtomicInteger running = new AtomicInteger(), peak = new AtomicInteger();
-    CountDownLatch secondReady = new CountDownLatch(1);
+    CountDownLatch firstTwoReady = new CountDownLatch(2);
     List<Long> order = new ArrayList<>();
     BvRoomBatch.Result result =
         BvRoomBatch.send(
@@ -195,8 +195,10 @@ class BvRoomTracksTest {
               int active = running.incrementAndGet();
               peak.accumulateAndGet(active, Math::max);
               try {
-                if (song.getId() == 1) assertTrue(secondReady.await(3, TimeUnit.SECONDS));
-                if (song.getId() == 2) secondReady.countDown();
+                  if (song.getId() <= 2) {
+                    firstTwoReady.countDown();
+                    assertTrue(firstTwoReady.await(3, TimeUnit.SECONDS));
+                  }
                 if (song.getId() == 3) throw new IOException("cannot prepare");
                 return metadata("gogo", song.getSourceId(), "43133044682", 0);
               } finally {

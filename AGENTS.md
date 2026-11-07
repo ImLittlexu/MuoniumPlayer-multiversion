@@ -15,13 +15,13 @@
 
 - 用户约定（2026-11-04）：今后编译交付的可安装主模组统一命名为 `MuoniumPlayer-<游戏版本>-<加载器>-<mod版本>-eoe.jar`。加载器使用小写 `fabric` / `forge` / `neoforge`；不再添加功能名、修复内容或日期后缀。
 - 每次新的编译交付前，将 mod 版本最后一位递增：例如 `2.4.0` → `2.4.1` → `2.4.2`。同一轮面向多个游戏版本或加载器的产物共用一个 mod 版本号；测试、配置查询及该轮失败后的排错重试不重复递增。
-- 按下文版本号单入口规则同步五树版本属性、客户端常量、共享版本常量与版本一致性测试，确保 JAR 内元数据和文件名一致。统一入口若在 checkout 中缺失，先补齐入口；不能仅改文件名或改一份版本。
+- 按下文版本号单入口规则同步七树版本属性、客户端常量、共享版本常量与版本一致性测试，确保 JAR 内元数据和文件名一致。统一入口若在 checkout 中缺失，先补齐入口；不能仅改文件名或改一份版本。
 - 交付时检查最终文件名与包内版本。既有 JAR 保持原名供回退，不追溯改名或覆写旧包；修复内容写入提交、更新记录和验收文档。
 
 ## 仓库一句话
 
 MuoniumPlayer：多版本 Minecraft **纯客户端**音乐 mod（网易云 / QQ / 酷狗 / 汽水 / YouTube / Spotify / Apple…）。
-五棵版本树 × 各 2 个加载器 = **10 个独立 Gradle 构建**；共享代码只有一份，改一处五树生效。
+七棵版本树（Fabric 7 + NeoForge 6 + Forge 1 = **14 个独立 Gradle 构建**）；共享代码只有一份，改一处七树生效。
 
 mod id 是 `muonium`。
 
@@ -29,10 +29,10 @@ mod id 是 `muonium`。
 
 | 路径 | 是什么 | 动不动 |
 | --- | --- | --- |
-| `muonium-common/` | 五树共享主体（源码 ~830 + 资源 + 测试 ~110），由各树 build.gradle 挂载，**不单独构建** | ✅ 守铁律 |
+| `muonium-common/` | 七树共享主体（源码 ~830 + 资源 + 测试 ~110），由各树 build.gradle 挂载，**不单独构建** | ✅ 守铁律 |
 | `1.20.1 recode/` | 版本树（Fabric + Forge）。目录名带空格，shell 里记得引号 | ✅ |
-| `1.21.1/` `1.21.11 recode/` | 版本树（Fabric + NeoForge） | ✅ |
-| `26.2/` `26.3/` | 版本树（Fabric + NeoForge）。**26.3 是主开发树** | ✅ |
+| `1.21.1/` `1.21.10/` `1.21.11 recode/` | 版本树（Fabric + NeoForge） | ✅ |
+| `26.1.2/` `26.2/` `26.3/` | 版本树（Fabric + NeoForge）。**26.3 是主开发树** | ✅ |
 | `<树>/src/main/java/…/` | 树内层：入口 `MuoniumPlayerClient`、`mixin/`、`compat/`（版本差异层） | ✅ |
 | `<树>/fabric/` `<树>/forge|neoforge/` | 加载器外壳子工程 | ✅ |
 | `mpparty-common/` | 一起听客户端共用源码，同 muonium-common 方式挂载 | ✅ |
@@ -49,14 +49,14 @@ mod id 是 `muonium`。
 ## 铁律（违反即返工）
 
 1. **共享层零加载器符号**：`muonium-common` 不许 import `net.fabricmc` / `net.neoforged` / `net.minecraftforge` / `cpw.mods`。
-2. **版本差异不回搬文件**：需要版本差异时，在五树 `compat/` 各写**同名同签名**方法，共享层只调这个名字。不许把共享文件整个搬回树里。
-3. **改共享层 = 改五树**：改完必须跑五树测试：`.\tools\build-all.ps1 -Task ':fabric:test'`。
+2. **版本差异不回搬文件**：需要版本差异时，在七树 `compat/` 各写**同名同签名**方法，共享层只调这个名字。不许把共享文件整个搬回树里。
+3. **改共享层 = 改七树**：改完必须跑七树测试：`.\tools\build-all.ps1 -Task ':fabric:test'`。
 4. **文件归属只有工具说了算**：新文件去留走 `python tools\share-trees.py classify / apply / verify`；
    `SHARE-MANIFEST.md` 是生成物（统计数字不许手改）。名单外的文件出现在树内 `src/main/java` 会被
    `SharedLayoutStaticTest` 钉红——修复靠 share-trees 流程，不是删测试。
-5. **主开发在 26.3**：新功能先在 26.3 写好，再往回打差异到其余四树；不反向。
+5. **主开发在 26.3**：新功能先在 26.3 写好，再往回打差异到其余六树；不反向。
 6. **版本号单入口**：只许 `bump-version.bat`（`tools/bump-version.ps1`），不许徒手改散落的版本号
-   （5 树 × 3 处 + 共享 `MuoniumPlayerExtension.VERSION`，`UpdateCheckStaticTest` 钉着）。
+   （7 树 × 3 处 + 共享 `MuoniumPlayerExtension.VERSION`，`UpdateCheckStaticTest` 钉着）。
 7. **资源按字节走**：字体 / 贴图 / dll 不许「读成字符串再写回去」，会把字节撑坏。
 
 ## 车道纪律
@@ -65,10 +65,11 @@ mod id 是 `muonium`。
 | --- | --- | --- | --- | --- |
 | `1.20.1 recode` | 1.20.1 | 17 | Fabric + Forge | Forge 保持 `mods.toml` + ForgeGradle 6 模式 |
 | `1.21.1` | 1.21.1 | 21 | Fabric + NeoForge | |
+| `1.21.10` | 1.21.10 | 21 | Fabric + NeoForge | GUI/外壳是 1.21.1 世代、GL/输入已是 1.21.9 世代的过渡档 |
 | `1.21.11 recode` | 1.21.11 | 21 | Fabric + NeoForge | |
-| `26.2` / `26.3` | 26.x | 25 | Fabric + NeoForge | 官方 jar 无混淆、无 `client_mappings`；源码直接官方名，Loom **不重映射** |
+| `26.1.2` / `26.2` / `26.3` | 26.x | 25 | Fabric + NeoForge | 官方 jar 无混淆、无 `client_mappings`；源码直接官方名，Loom **不重映射** |
 
-- 五棵树是**五个独立 Gradle 构建**（JDK / 映射 / 插件各不同），禁止合并成一个多项目构建；
+- 七棵树是**七个独立 Gradle 构建**（JDK / 映射 / 插件各不同），禁止合并成一个多项目构建；
   守护进程 JDK 已按树钉死在 `org.gradle.java.home`（1.20.1~1.21.11 → ms-21，26.x → temurin-25）。
 - Fabric 全树用 `loom.officialMojangMappings()`：**写 mojmap 名，别写 Yarn 名**。
 - `mixin/` 注入点本就各树一份（manifest 里的 ONLY），别试图共享。
@@ -76,7 +77,7 @@ mod id 是 `muonium`。
 ## 构建与测试
 
 ```powershell
-.\build-all.bat                                          # 五树全量 → dist/
+.\build-all.bat                                          # 七树全量 → dist/
 .\build-all.bat -Versions '26.3' -Task ':fabric:test'    # 单树跑测试
 .\build-all.bat -Versions '1.21.1','26.2' -Offline       # 指定树
 cd '26.3'; .\gradlew :fabric:runClient                   # 单树跑客户端

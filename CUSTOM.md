@@ -1,6 +1,6 @@
 # GOGO / UNM 定制版
 
-这是 [MuoniumPlayer](https://github.com/zihe114514/MuoniumPlayer-multiversion) 的定制 Fork，由 [ImLittlexu](https://github.com/ImLittlexu) 维护。保留原作者署名、许可证与 Git 历史。主要交付目标为 **Minecraft 1.21.1 Fabric / Java 21**；共享代码仍按原项目的五版本规则维护。
+这是 [MuoniumPlayer](https://github.com/zihe114514/MuoniumPlayer-multiversion) 的定制 Fork，由 [ImLittlexu](https://github.com/ImLittlexu) 维护。保留原作者署名、许可证与 Git 历史。主要交付目标为 **Minecraft 1.21.1 Fabric / Java 21**；共享代码仍按原项目的七版本规则维护。
 
 ## 分支与远程
 
@@ -93,7 +93,7 @@ git merge --no-commit --no-ff upstream/main
 
 有冲突时逐文件合并，保留两站身份与持久化、取流顺序、歌词、歌单入口、筛选菜单、封面处理、输入法和默认按键。不能整批选“使用上游”。如本次合并不继续，使用 `git merge --abort` 返回合并前状态。若已显示没有更新，则无须创建合并提交。
 
-按 AGENTS.md 执行五树 Fabric 测试，主要交付树再执行 `:fabric:assemble`。本机 JDK/代理路径按实际环境用命令行覆盖。聚合工具若缺失，逐树执行；既有失败与新增失败分别记录，不删除测试或修改断言掩盖。
+按 AGENTS.md 执行七树 Fabric 测试，主要交付树再执行 `:fabric:assemble`。本机 JDK/代理路径按实际环境用命令行覆盖。聚合工具若缺失，逐树执行；既有失败与新增失败分别记录，不删除测试或修改断言掩盖。
 
 确认代码和检查结果后：
 
@@ -111,6 +111,12 @@ git push origin custom
 
 ## 当前基线
 
-截至 2026-11-04，已合入上游 2.4.0 主线 `0ecc122`。定制代码基线 `c7c39c7`，并修复 1.20.1/1.21.1 果冻效果的矩阵配对，以及上游 Windows 图形测试误跳过的问题。
+EOE 2.4.7 集成作者 2.4.2 主线 `e70d5ca`，保留此前 `0ecc122` 与全部定制历史。支持七个游戏版本：1.20.1、1.21.1、1.21.10、1.21.11、26.1.2、26.2、26.3；主要交付目标仍是 1.21.1 Fabric / Java 21。
 
-五树完整测试仅保留两项既有失败：横向主题滑条静态约束、checkout 缺少 Lucide 图标生成脚本。1.21.1 Fabric 发布 JAR 已构建；尚未完成游戏内及 Derivative 光影实机验收。世界音箱放置功能的上游适配仍仅在 26.3，不宣称 1.21.1 包含该能力。
+七树沿用自定义默认按键、连接入场提示与 Windows x64 原生资源内置。设置界面默认保留经典内置，MuoniumConfig 为可选项；启动时不自动安装外部 MuoniumConfig；已有 OneConfig / ModernUI / MuoniumConfig 选择继续生效，外部界面不可用时回退经典内置。修复了六树世界声源按键被环境选曲按键条件阻塞的问题。
+
+本轮接纳上游缓存与凭据迁移：缓存位于游戏根 `MuoniumPlayer/cache`，登录凭据位于 `MuoniumPlayer/auth`。普通设置、歌单引用和播放记忆仍在 `config/muonium`，Skija 原生资产仍在 `config/muonium/native/skija`。新位置已有文件优先，迁移失败保留旧文件；目标不可写时登录态可能暂时不可用，解除阻塞后重启可重试。回退旧版前需在关闭游戏后备份两侧目录，并将凭据及缓存恢复到旧版路径，不能只替换 JAR。
+
+Fabric Language Kotlin 沿用原有独立前置要求，不内嵌第二份 Kotlin 运行时。一起听服务端及协议不变。版本统一由 `bump-version.bat` 维护七树共 22 处；`-AlignNewTrees` 只用于将本次新增的两树上游 2.4.2 对齐到已有 EOE 版本，正常交付仍执行一次 patch 递增。
+
+自动化结果与游戏内验收分别记录。未实测的登录、切窗播放、HUD 拖动、输入法、声源、运镜与光影效果不宣称已完成实机验证。

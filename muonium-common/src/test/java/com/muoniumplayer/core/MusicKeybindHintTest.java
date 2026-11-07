@@ -62,7 +62,7 @@ class MusicKeybindHintTest {
 
     @Test
     void allVersionTicksReadLiveBindingsAndUseLocalChat() throws Exception {
-        for (String tree : List.of("1.20.1 recode", "1.21.1", "1.21.11 recode", "26.2", "26.3")) {
+        for (String tree : List.of("1.20.1 recode", "1.21.1", "1.21.10", "1.21.11 recode", "26.1.2", "26.2", "26.3")) {
             String source = Files.readString(ProjectPaths.repoRoot().resolve(tree)
                     .resolve("src/main/java/com/muoniumplayer/MuoniumPlayerClient.java"));
             assertTrue(source.contains("keybindHint.shouldAnnounce(mc.getConnection()"), tree);

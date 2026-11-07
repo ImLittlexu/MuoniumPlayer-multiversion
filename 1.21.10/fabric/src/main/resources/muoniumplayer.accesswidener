@@ -1,0 +1,3 @@
+accessWidener	v2	named
+# Exact nested return type of RenderType.create for the glow Invoker.
+accessible class net/minecraft/client/renderer/RenderType$CompositeRenderType

@@ -28,16 +28,26 @@ class HudExternalUiStaticTest {
     private static final Path SHARED_JAVA = ProjectPaths.sharedJava();
 
     @Test
-    @DisplayName("hudEditorUi 认 modernui 这个值，并且只认三个值")
+    @DisplayName("hudEditorUi 保留四种选择，默认与未知值回退经典内置界面")
     void configAcceptsModernUiLayer() throws IOException {
         String config = read(settings("HudConfig.java"));
         assertTrue(config.contains("public static final String HUD_EDITOR_UI_MODERNUI = \"modernui\""),
                 "少了 modernui 这一档常量");
         assertTrue(config.contains("HUD_EDITOR_UI_MODERNUI.equalsIgnoreCase(value)) return HUD_EDITOR_UI_MODERNUI"),
                 "load() 的归一化必须认 modernui，否则存了下次就读不回来");
+        assertTrue(config.contains("public static final String HUD_EDITOR_UI_MCONFIG = \"mconfig\""),
+                "少了 mconfig（MuoniumConfig）这一档常量");
+        assertTrue(config.contains("public static String hudEditorUi = HUD_EDITOR_UI_BUILTIN;"),
+                "升级不改变默认界面，MuoniumConfig 由用户自行选择");
         assertTrue(config.contains("return HUD_EDITOR_UI_BUILTIN;"),
-                "归一化仍要有兜底：手改坏的配置文件要回到内置界面");
+                "旧 builtin 与未知值必须保持经典界面兜底");
+        assertTrue(config.contains("HUD_EDITOR_UI_MCONFIG.equalsIgnoreCase(value)) return HUD_EDITOR_UI_MCONFIG"),
+                "明确选择 MuoniumConfig 后重启仍须保留");
         assertTrue(config.contains("o.addProperty(\"hudEditorUi\", hudEditorUi)"));
+        String entry = read(ProjectPaths.fabric().resolve(
+                "src/main/java/com/muoniumplayer/MuoniumPlayerMod.java"));
+        assertTrue(!entry.contains("MuoniumConfigDownload.ensureDownloaded("),
+                "可选的内置界面不应在启动时自动安装外部 MuoniumConfig");
     }
 
     @Test
@@ -51,30 +61,35 @@ class HudExternalUiStaticTest {
         assertTrue(bridge.contains("return isInstalled() && hasPanel();"),
                 "「装了 ModernUI」与「本构建编入了面板」要分开判：只装没面板时不能谎报可用");
         assertTrue(bridge.contains("if (!isAvailable()) return false;"),
-                "不可用时 open() 要直接返回 false，由调用方回落内置界面");
+                "不可用时 open() 要直接返回 false，由调用方回落");
     }
 
     @Test
-    @DisplayName("打开顺序：modernui 在 oneconfig 之前，两者都在内置界面回落之前")
+    @DisplayName("按保存的选择分派，外部界面不可用时回退经典内置界面")
     void dispatchTriesModernUiThenOneConfigThenBuiltin() throws IOException {
         String client = read(ProjectPaths.sourceFile(Paths.get(
                 "com", "muoniumplayer", "MuoniumPlayerClient.java")));
         int modern = client.indexOf("HUD_EDITOR_UI_MODERNUI.equals(HudConfig.hudEditorUi)");
-        int oneConfig = client.indexOf("HUD_EDITOR_UI_ONECONFIG.equals(HudConfig.hudEditorUi)");
-        // 回落那一档只认构造调用：26.x 是 mc.gui.setScreen(...)，更早的树是 mc.setScreen(...)。
+        int oneConfig = client.indexOf("OneConfigHudBridge.open()");
+        // 兜底那一档只认构造调用：26.x 是 mc.gui.setScreen(...)，更早的树是 mc.setScreen(...)。
         int builtin = client.indexOf("new GuiHudEditorPro())");
-        assertTrue(modern >= 0 && oneConfig >= 0 && builtin >= 0, "三档分派都在 openHudEditor 里");
-        assertTrue(modern < oneConfig && oneConfig < builtin,
-                "外部层要先试，最后才回落到内置界面：" + modern + "," + oneConfig + "," + builtin);
+        int mconfig = client.indexOf("new MConfigHudScreen())");
+        assertTrue(modern >= 0 && oneConfig >= 0 && builtin >= 0,
+                "四档分派都在 openHudEditor 里");
+        assertTrue(modern < oneConfig && oneConfig < mconfig && mconfig < builtin,
+                "ModernUI / OneConfig / MuoniumConfig 仅按明确选择打开，最后是经典兜底：" + modern + "," + oneConfig + "," + builtin);
+        assertTrue(client.contains("HUD_EDITOR_UI_MCONFIG.equals(HudConfig.hudEditorUi)"),
+                "MuoniumConfig 必须只在用户选择 mconfig 时打开");
     }
 
     @Test
-    @DisplayName("三套内置界面共用的模型里有「设置界面由谁渲染」，且不可用时把原因写在值上")
+    @DisplayName("各套界面共用的模型里有「设置界面由谁渲染」，且不可用时把原因写在值上")
     void modelExposesLayerChoiceWithReason() throws IOException {
         String model = read(hud("HudSettingsModel.java"));
         assertTrue(model.contains("choice(\"设置界面由谁渲染\""),
                 "用户要能在设置里选外部层，而不是只能改配置文件");
-        assertTrue(model.contains("new String[] {\"内置\", \"OneConfig\", \"ModernUI\"}"));
+        assertTrue(model.contains("new String[] {\"内置\", \"MuoniumConfig\", \"OneConfig\", \"ModernUI\"}"),
+                "经典内置、MuoniumConfig、OneConfig 与 ModernUI 都应可选");
         assertTrue(model.contains("HudSettingsModel::setUiLayerChoice"));
         assertTrue(model.contains("ModernUiHudBridge.statusLabel()"),
                 "选中的层不可用时要在当前值上写明原因，否则玩家分不清没装还是没有本版本构件");
@@ -85,9 +100,9 @@ class HudExternalUiStaticTest {
     @DisplayName("共享源码不得在编译期依赖 ModernUI，否则拿不到构件的版本树整棵编不过")
     void sharedSourceNeverImportsModernUi() throws IOException {
         final List<Path> offenders = new ArrayList<Path>();
-        { java.util.stream.Stream<Path> walk = ProjectPaths.allJavaFiles().stream();
+        { java.util.stream.Stream<Path> walk = ProjectPaths.allSourceFiles().stream();
             walk.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .filter(ProjectPaths::isSourceFile)
                     .forEach(p -> {
                         try {
                             String text = new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
