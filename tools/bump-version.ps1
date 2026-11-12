@@ -1,5 +1,10 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
-param([switch]$AlignNewTrees)
+[CmdletBinding(SupportsShouldProcess = $true, DefaultParameterSetName = 'Bump')]
+param(
+    [Parameter(ParameterSetName = 'Align')][switch]$AlignNewTrees,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Set')]
+    [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')]
+    [string]$Version
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -22,20 +27,28 @@ foreach ($target in $targets) {
     $regex = [regex]::new($target.Pattern)
     $matches = $regex.Matches($text)
     if ($matches.Count -ne 1) { throw "Expected one version in $($target.Path), found $($matches.Count)" }
-    $version = $matches[0].Groups[2].Value
-    if ($null -eq $current) { $current = $version }
-    if ($version -ne $current) {
+    $foundVersion = $matches[0].Groups[2].Value
+    if ($null -eq $current) { $current = $foundVersion }
+    if ($foundVersion -ne $current) {
         $newTree = $target.Path.StartsWith('1.21.10/') -or $target.Path.StartsWith('26.1.2/')
-        if (-not ($AlignNewTrees -and $newTree -and $version -eq '2.4.2')) {
-            throw "Version mismatch in $($target.Path): $version vs $current"
+        if (-not ($AlignNewTrees -and $newTree -and $foundVersion -eq '2.4.2')) {
+            throw "Version mismatch in $($target.Path): $foundVersion vs $current"
         }
     }
     $records += @{ Path = $path; Text = $text; Regex = $regex }
 }
-$parts = $current.Split('.')
-$patch = [int]$parts[2]
-if ($patch -eq [int]::MaxValue) { throw 'Patch version exhausted' }
-$next = if ($AlignNewTrees) { $current } else { "$($parts[0]).$($parts[1]).$($patch + 1)" }
+if ($Version) {
+    if ([version]$Version -lt [version]$current) { throw "Version rollback refused: $current -> $Version" }
+    if ($Version -eq $current) { Write-Output "Already at $current ($($records.Count) files)"; return }
+    $next = $Version
+} elseif ($AlignNewTrees) {
+    $next = $current
+} else {
+    $parts = $current.Split('.')
+    $patch = [int]$parts[2]
+    if ($patch -eq [int]::MaxValue) { throw 'Patch version exhausted' }
+    $next = "$($parts[0]).$($parts[1]).$($patch + 1)"
+}
 if ($PSCmdlet.ShouldProcess($repoRoot, "Bump mod version $current -> $next in $($records.Count) files")) {
     foreach ($record in $records) {
         $updated = $record.Regex.Replace($record.Text, [System.Text.RegularExpressions.MatchEvaluator]{

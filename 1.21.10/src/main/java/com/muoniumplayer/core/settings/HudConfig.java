@@ -575,7 +575,7 @@ public final class HudConfig {
      */
     public static final String HUD_EDITOR_UI_MODERNUI = "modernui";
 
-    public static String hudEditorUi = HUD_EDITOR_UI_BUILTIN;
+    public static String hudEditorUi = HUD_EDITOR_UI_MCONFIG;
 
     /**
      * 播放态由谁供给：内部播放器，还是系统里正在播的外部播放器（Windows SMTC）。
@@ -589,6 +589,14 @@ public final class HudConfig {
     public static final String HUD_PLAYBACK_FEED_MIRROR = "mirror";
 
     public static String playbackFeed = HUD_PLAYBACK_FEED_INTERNAL;
+
+    /**
+     * SMTC 时间轴稳定器的用户覆盖（镜像路径专用，见 SmtcTimelineStabilizer）。
+     * -1 = 跟随内置表（Apple Music 450ms 补偿 / 各播放器外推窗口）；否则为用户拖的值。
+     */
+    public static int smtcTimelineDelayMs = -1;
+    /** SMTC 外推窗口覆盖（毫秒）；-1 = 跟随内置表。 */
+    public static int smtcTimelineWindowMs = -1;
 
     /**
      * 歌词搜索弹窗（手动选词那一页）的整体缩放倍率：
@@ -654,6 +662,15 @@ public final class HudConfig {
     public static boolean glassSurfaceIsland = true;
     /** 游戏内 Ctrl+F 从灵动岛长出的快捷搜索栏。关掉后快捷键不再响应。 */
     public static boolean islandSearchEnabled = true;
+    /**
+     * 音乐胶囊（灵动岛第九款）迷你卡的缩放档位。卡片按 296×130 设计空间整体缩放；
+     * 窄窗口上会再按可用宽高自动收口，不会裁边。
+     */
+    public static float islandMiniCardScale = 1.0f;
+    /** 音乐胶囊收起行与迷你卡主文本是否显示当前歌词行（关掉则恒显歌名 - 歌手）。 */
+    public static boolean islandMusicShowsLyric = true;
+    /** 音乐胶囊是否允许「鼠标悬停展开迷你卡」。关掉后卡片只能通过别的入口看到（收起行照常显示）。 */
+    public static boolean islandHoverExpand = true;
     /** 真玻璃生效在桌面歌词卡片上。 */
     public static boolean glassSurfaceDesktopLyric = true;
     /** 真玻璃生效在三套 HUD 设置界面的面板上。这几块面板平时是不透明的，所以它同时决定底色压不压薄。 */
@@ -719,6 +736,9 @@ public final class HudConfig {
      * 默认关——性能未经真机标定，用户自担。加载与改动时推入 {@code GlassMobileTier#setUserOptIn}。
      */
     public static boolean glassMobileExperimental = false;
+
+    /** Factory snapshot after all field initializers, before any load. */
+    private static final JsonObject DEFAULTS = toJson();
 
     private HudConfig() {
     }
@@ -874,9 +894,15 @@ public final class HudConfig {
         }
         try {
             JsonObject o = JsonConfigStorage.readObject(FILE, GSON);
-            if (o == null) {
-                return;
-            }
+            applyJson(o);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Memory-only seam with original per-tree read/migration bounds. Missing fields retain current values. */
+    public static void applyJson(JsonObject o) {
+        if (o == null) return;
+        try {
             infoX = clampPos(getFloat(o, "infoX", infoX));
             infoY = clampPos(getFloat(o, "infoY", infoY));
             infoScale = clampScale(getFloat(o, "infoScale", infoScale));
@@ -1053,6 +1079,9 @@ public final class HudConfig {
 
             dynamicIslandEnabled = getBoolean(o, "dynamicIslandEnabled", dynamicIslandEnabled);
             islandSearchEnabled = getBoolean(o, "islandSearchEnabled", islandSearchEnabled);
+            islandMiniCardScale = clamp(getFloat(o, "islandMiniCardScale", islandMiniCardScale), 0.5f, 2.0f);
+            islandMusicShowsLyric = getBoolean(o, "islandMusicShowsLyric", islandMusicShowsLyric);
+            islandHoverExpand = getBoolean(o, "islandHoverExpand", islandHoverExpand);
             dynamicIslandScale = clamp(getFloat(o, "dynamicIslandScale", dynamicIslandScale), 0.60f, 1.35f);
             dynamicIslandY = clamp(getFloat(o, "dynamicIslandY", dynamicIslandY), -20.0f, 400.0f);
             infoCardBackdrop = clampInt(getInt(o, "infoCardBackdrop", infoCardBackdrop), 0, INFO_CARD_BACKDROP_MAX);
@@ -1084,6 +1113,12 @@ public final class HudConfig {
         if (o.has("playbackFeed") && o.get("playbackFeed").isJsonPrimitive()) {
             playbackFeed = normalizePlaybackFeed(o.get("playbackFeed").getAsString());
         }
+        if (o.has("smtcTimelineDelayMs") && o.get("smtcTimelineDelayMs").isJsonPrimitive()) {
+            smtcTimelineDelayMs = o.get("smtcTimelineDelayMs").getAsInt();
+        }
+        if (o.has("smtcTimelineWindowMs") && o.get("smtcTimelineWindowMs").isJsonPrimitive()) {
+            smtcTimelineWindowMs = o.get("smtcTimelineWindowMs").getAsInt();
+        }
         hudEditorPanelX = clamp(getFloat(o, "hudEditorPanelX", hudEditorPanelX), -1.0f, 1.0f);
         hudEditorPanelY = clamp(getFloat(o, "hudEditorPanelY", hudEditorPanelY), -1.0f, 1.0f);
         hudEditorLastCategory = (int) clamp(getFloat(o, "hudEditorLastCategory", hudEditorLastCategory), 0.0f, 31.0f);
@@ -1111,6 +1146,21 @@ public final class HudConfig {
     /** 编辑器交互后持久化设置。 */
     public static void save() {
         try {
+            JsonConfigStorage.writeObject(FILE, GSON, toJson());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Checked transaction variant; legacy save remains best-effort. */
+    public static void savePresetState() {
+        try { JsonConfigStorage.writeObject(FILE, GSON, toJson()); }
+        catch (java.io.IOException failure) { throw new IllegalStateException("HUD 配置落盘失败", failure); }
+    }
+
+    public static JsonObject defaultsJson() { return DEFAULTS.deepCopy(); }
+
+    /** Complete persisted state, pure memory, with every existing field retained. */
+    public static JsonObject toJson() {
             JsonObject o = new JsonObject();
             o.addProperty("infoX", infoX);
             o.addProperty("infoY", infoY);
@@ -1258,6 +1308,9 @@ public final class HudConfig {
 
             o.addProperty("dynamicIslandEnabled", dynamicIslandEnabled);
             o.addProperty("islandSearchEnabled", islandSearchEnabled);
+            o.addProperty("islandMiniCardScale", islandMiniCardScale);
+            o.addProperty("islandMusicShowsLyric", islandMusicShowsLyric);
+            o.addProperty("islandHoverExpand", islandHoverExpand);
             o.addProperty("dynamicIslandScale", dynamicIslandScale);
             o.addProperty("dynamicIslandY", dynamicIslandY);
             o.addProperty("infoCardBackdrop", infoCardBackdrop);
@@ -1285,6 +1338,8 @@ public final class HudConfig {
         o.addProperty("lyricSearchUiScale", lyricSearchUiScale);
         o.addProperty("hudEditorUi", hudEditorUi);
         o.addProperty("playbackFeed", playbackFeed);
+        o.addProperty("smtcTimelineDelayMs", smtcTimelineDelayMs);
+        o.addProperty("smtcTimelineWindowMs", smtcTimelineWindowMs);
         o.addProperty("hudEditorPanelX", hudEditorPanelX);
         o.addProperty("hudEditorPanelY", hudEditorPanelY);
         o.addProperty("hudEditorLastCategory", hudEditorLastCategory);
@@ -1295,10 +1350,7 @@ public final class HudConfig {
 
             o.addProperty("animatedCoverEnabled", animatedCoverEnabled);
 
-            JsonConfigStorage.writeObject(FILE, GSON, o);
-
-        } catch (Throwable ignored) {
-        }
+            return o;
     }
 
     public static int clampInt(int v, int min, int max) {
@@ -1386,10 +1438,9 @@ public final class HudConfig {
     }
 
     private static String normalizeHudEditorUi(String value) {
-        if (HUD_EDITOR_UI_MCONFIG.equalsIgnoreCase(value)) return HUD_EDITOR_UI_MCONFIG;
         if (HUD_EDITOR_UI_ONECONFIG.equalsIgnoreCase(value)) return HUD_EDITOR_UI_ONECONFIG;
         if (HUD_EDITOR_UI_MODERNUI.equalsIgnoreCase(value)) return HUD_EDITOR_UI_MODERNUI;
-        return HUD_EDITOR_UI_BUILTIN;
+        return HUD_EDITOR_UI_MCONFIG;
     }
 
     /**

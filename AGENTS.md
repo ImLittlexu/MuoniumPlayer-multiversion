@@ -15,6 +15,7 @@
 
 - 用户约定（2026-11-04）：今后编译交付的可安装主模组统一命名为 `MuoniumPlayer-<游戏版本>-<加载器>-<mod版本>-eoe.jar`。加载器使用小写 `fabric` / `forge` / `neoforge`；不再添加功能名、修复内容或日期后缀。
 - 每次新的编译交付前，将 mod 版本最后一位递增：例如 `2.4.0` → `2.4.1` → `2.4.2`。同一轮面向多个游戏版本或加载器的产物共用一个 mod 版本号；测试、配置查询及该轮失败后的排错重试不重复递增。
+- 用户约定（2026-11-12）：本轮随上游显式对齐 EOE `2.5.2`，通过 `bump-version.bat -Version 2.5.2` 统一设置；相同版本重试不写入，拒绝倒退。之后默认 patch 递增（下一轮 `2.5.3`）。
 - 按下文版本号单入口规则同步七树版本属性、客户端常量、共享版本常量与版本一致性测试，确保 JAR 内元数据和文件名一致。统一入口若在 checkout 中缺失，先补齐入口；不能仅改文件名或改一份版本。
 - 交付时检查最终文件名与包内版本。既有 JAR 保持原名供回退，不追溯改名或覆写旧包；修复内容写入提交、更新记录和验收文档。
 
@@ -45,6 +46,40 @@ mod id 是 `muonium`。
 | `光影/` `shader-compat-work/` | 光影测试素材与适配工作区 | 谨慎 |
 | `_mcref/` `_folia_ref/` | MC 反编译参考（`classes-26.3.txt` 等）与 Folia 参考检出版 | ⛔ 只读 |
 | `_trash/` `.recover-backup/` `.scratch/` `_scratch/` | 垃圾与快照 | ⛔ 别碰别提交 |
+
+## HUD 设置界面在另一个仓库
+
+按 HUD 编辑快捷键（本 Fork 默认反引号键）打开的设置界面（Compose 那套）**不在本仓库**。
+它住在独立仓库，运行期按需下载到 `mods/`：
+
+```
+E:\oneconfig lite\MuoniumConfig-src        ← 界面代码在这里
+<树>/<加载器>/run/mods/muoniumconfig-*.jar  ← 开发期以 mod 形式加载
+```
+
+| 文档 | 内容 |
+| --- | --- |
+| `MuoniumConfig-src/docs/MAINTENANCE.md` | **维护规范**：改动流程、版本对照表、排查顺序、工具清单 |
+| `MuoniumConfig-src/docs/PITFALLS.md` | **踩坑实录 23 条**：现象 / 根因 / 修法 |
+
+改完那边的标准动作（漏第二步 = 游戏里跑的还是旧包）：
+
+```bash
+cd "E:\oneconfig lite\MuoniumConfig-src"
+python tools/build-all.py --lane 1.21.1
+python tools/sync-dev-mods.py --lane 1.21.1
+```
+
+**本仓库这边**只负责「把设置项喂给界面」，对接点是六个反射桥
+（`muonium-common/.../screens/hud/`）：`OneConfigHudBridge`、`MuoniumHudProperties`、
+`MuoniumFavorites`、`MuoniumHudProviders`、`MuoniumFontBridge`、`MuoniumConfigDownload`。
+改了其中任何反射用到的类名/方法名 = 破坏契约，表现是「界面能开、HUD 不出现」的
+静默降级。改完到 MuoniumConfig 仓库跑
+`python tools/check-music-contract.py --jar <产物>`。
+
+> 注意：`docs/oneconfig-integration.md` 里「`builtin` 是默认值」的说法已过时
+> （2026-11-08 起默认 `mconfig`）。以 `<树>/.../HudConfig.java` 的
+> `HUD_EDITOR_UI_*` 常量为准。
 
 ## 铁律（违反即返工）
 

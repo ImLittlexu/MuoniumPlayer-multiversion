@@ -28,7 +28,25 @@ class HudExternalUiStaticTest {
     private static final Path SHARED_JAVA = ProjectPaths.sharedJava();
 
     @Test
-    @DisplayName("hudEditorUi 保留四种选择，默认与未知值回退经典内置界面")
+    void savedEditorChoicesMigrateInMemoryWithoutWritingUserConfig() {
+        com.google.gson.JsonObject before = com.muoniumplayer.core.settings.HudConfig.toJson();
+        try {
+            org.junit.jupiter.api.Assertions.assertEquals("mconfig",
+                    com.muoniumplayer.core.settings.HudConfig.defaultsJson().get("hudEditorUi").getAsString());
+            for (String value : new String[] {"builtin", "unknown", "mconfig", "oneconfig", "modernui"}) {
+                com.google.gson.JsonObject input = new com.google.gson.JsonObject();
+                input.addProperty("hudEditorUi", value);
+                com.muoniumplayer.core.settings.HudConfig.applyJson(input);
+                String expected = "oneconfig".equals(value) || "modernui".equals(value) ? value : "mconfig";
+                org.junit.jupiter.api.Assertions.assertEquals(expected, com.muoniumplayer.core.settings.HudConfig.hudEditorUi);
+            }
+        } finally {
+            com.muoniumplayer.core.settings.HudConfig.applyJson(before);
+        }
+    }
+
+    @Test
+    @DisplayName("hudEditorUi 默认外部设置中心，旧 builtin 与未知值迁到 mconfig")
     void configAcceptsModernUiLayer() throws IOException {
         String config = read(settings("HudConfig.java"));
         assertTrue(config.contains("public static final String HUD_EDITOR_UI_MODERNUI = \"modernui\""),
@@ -37,17 +55,15 @@ class HudExternalUiStaticTest {
                 "load() 的归一化必须认 modernui，否则存了下次就读不回来");
         assertTrue(config.contains("public static final String HUD_EDITOR_UI_MCONFIG = \"mconfig\""),
                 "少了 mconfig（MuoniumConfig）这一档常量");
-        assertTrue(config.contains("public static String hudEditorUi = HUD_EDITOR_UI_BUILTIN;"),
-                "升级不改变默认界面，MuoniumConfig 由用户自行选择");
-        assertTrue(config.contains("return HUD_EDITOR_UI_BUILTIN;"),
-                "旧 builtin 与未知值必须保持经典界面兜底");
-        assertTrue(config.contains("HUD_EDITOR_UI_MCONFIG.equalsIgnoreCase(value)) return HUD_EDITOR_UI_MCONFIG"),
-                "明确选择 MuoniumConfig 后重启仍须保留");
+        assertTrue(config.contains("public static String hudEditorUi = HUD_EDITOR_UI_MCONFIG;"),
+                "默认设置中心必须在七树一致");
+        assertTrue(config.contains("return HUD_EDITOR_UI_MCONFIG;"),
+                "旧 builtin 与未知值必须迁入外部设置中心");
         assertTrue(config.contains("o.addProperty(\"hudEditorUi\", hudEditorUi)"));
-        String entry = read(ProjectPaths.fabric().resolve(
-                "src/main/java/com/muoniumplayer/MuoniumPlayerMod.java"));
-        assertTrue(!entry.contains("MuoniumConfigDownload.ensureDownloaded("),
-                "可选的内置界面不应在启动时自动安装外部 MuoniumConfig");
+        String updater = read(ProjectPaths.sharedJava().resolve(
+                "com/muoniumplayer/core/update/UpdateChecker.java"));
+        assertTrue(updater.contains("MuoniumConfigDownload.ensureDownloaded(mcVersion, loaderId)"),
+                "共享启动入口必须自动检查对应车道的设置中心");
     }
 
     @Test
@@ -65,7 +81,7 @@ class HudExternalUiStaticTest {
     }
 
     @Test
-    @DisplayName("按保存的选择分派，外部界面不可用时回退经典内置界面")
+    @DisplayName("ModernUI 明确选择优先，其余走外部桥，不可用时回退经典")
     void dispatchTriesModernUiThenOneConfigThenBuiltin() throws IOException {
         String client = read(ProjectPaths.sourceFile(Paths.get(
                 "com", "muoniumplayer", "MuoniumPlayerClient.java")));
@@ -74,12 +90,11 @@ class HudExternalUiStaticTest {
         // 兜底那一档只认构造调用：26.x 是 mc.gui.setScreen(...)，更早的树是 mc.setScreen(...)。
         int builtin = client.indexOf("new GuiHudEditorPro())");
         int mconfig = client.indexOf("new MConfigHudScreen())");
-        assertTrue(modern >= 0 && oneConfig >= 0 && builtin >= 0,
-                "四档分派都在 openHudEditor 里");
-        assertTrue(modern < oneConfig && oneConfig < mconfig && mconfig < builtin,
-                "ModernUI / OneConfig / MuoniumConfig 仅按明确选择打开，最后是经典兜底：" + modern + "," + oneConfig + "," + builtin);
-        assertTrue(client.contains("HUD_EDITOR_UI_MCONFIG.equals(HudConfig.hudEditorUi)"),
-                "MuoniumConfig 必须只在用户选择 mconfig 时打开");
+        assertTrue(modern >= 0 && oneConfig > modern && builtin > oneConfig,
+                "必须先尝试已选 ModernUI，再走默认外部桥，最后经典兜底");
+        assertTrue(mconfig < 0, "不再分派到旧的自绘现代界面");
+        assertTrue(!client.contains("HUD_EDITOR_UI_ONECONFIG.equals(HudConfig.hudEditorUi)"),
+                "默认外部桥不能受旧 oneconfig 选择条件阻塞");
     }
 
     @Test
@@ -88,8 +103,8 @@ class HudExternalUiStaticTest {
         String model = read(hud("HudSettingsModel.java"));
         assertTrue(model.contains("choice(\"设置界面由谁渲染\""),
                 "用户要能在设置里选外部层，而不是只能改配置文件");
-        assertTrue(model.contains("new String[] {\"内置\", \"MuoniumConfig\", \"OneConfig\", \"ModernUI\"}"),
-                "经典内置、MuoniumConfig、OneConfig 与 ModernUI 都应可选");
+        assertTrue(model.contains("new String[] {\"MuoniumConfig\", \"OneConfig\", \"ModernUI\"}"),
+                "仅外部设置中心可选，经典界面只作兜底");
         assertTrue(model.contains("HudSettingsModel::setUiLayerChoice"));
         assertTrue(model.contains("ModernUiHudBridge.statusLabel()"),
                 "选中的层不可用时要在当前值上写明原因，否则玩家分不清没装还是没有本版本构件");

@@ -183,7 +183,9 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
                         ((LyricGlyphAtlasBridge.PageHandle) pendingGlyphPage).resourceLocation()));
             }
             if (buffers != null && pendingEffectRl != null) {
-                buffers.endBatch(currentEffectType(pendingEffectRl));
+                // 必须用取批时同一个类型收（见 flushEffectBatch 注释）：特效通道的
+                // getBuffer 走 currentGlyphType，这里若用 currentEffectType 会落空。
+                buffers.endBatch(currentGlyphType(pendingEffectRl));
             }
         } finally {
             pendingGlyphPage = null;
@@ -268,11 +270,11 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
         // 墨格：无发光留白（晕在独立晕格，墨格回归防裁切最小 pad）
         LyricGlyphAtlas.GlyphCell cell = LyricGlyphAtlas.getInkCell(c, rgb & 0xFFFFFF);
         if (cell == null) {
-            // 绘光模式下「预算内暂时没烘出来」不回退像素字 —— 那正是用户看到的
-            // 「有时退回原版渲染风格」：字形瞬闪像素风再换回烘焙字形，非常扎眼。
-            // 图集可用时静默跳过该字（下一帧补齐，烘焙预算已提到 4 格/帧）；
-            // 图集整体不可用（host 缺失/字体缺位）仍回退像素字，绝不吞字。
-            if (settings != null && settings.huiguang && LyricGlyphAtlas.isFunctional()) {
+            // 现代化风格下「预算内暂时没烘出来」不回退像素字 —— 否则新字会瞬闪像素风，
+            // 下一帧图集补齐后又切回烘焙字形，非常扎眼。
+            // 图集可用时静默跳过该字（下一帧补齐）；图集整体不可用
+            //（host 缺失/字体缺位）仍回退像素字，绝不吞字。
+            if (LyricGlyphAtlas.isFunctional()) {
                 return;
             }
             // 图集不可用/超尺寸：像素字兜底（带阴影 —— 与平滑档的立体感语义一致）
@@ -340,7 +342,57 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
 
         int argb = (((int) (alpha * 255f) & 0xFF) << 24) | (rgb & 0xFFFFFF);
 
-        // 晕格先画（加色 currentEffectType），墨格后进挂起合批 —— 观感上晕在字下。
+        // ---- 层序（与 1.20.1 / 26.3 标杆对齐）：阴影 → 晕（加色） → 墨 ----
+        // 1.21.1 曾按「晕 → 阴影 → 墨」画，用户实测「字上面有灰色的颜色污染」、
+        // 「已唱部分重影严重」—— 与 1.20.1 修之前的症状逐字一致。原因两层：
+        //   1. 阴影是 alpha 混合的黑（0.22），画在加色晕之上会把晕压暗；
+        //   2. 更要命的是阴影与墨共用同一个 RenderType，而原版 textSeeThrough 的
+        //      sortOnUpload=true —— 同一批次内 quad 按 VertexSorting 距离重排。
+        //      阴影 quad 与墨 quad 位置几乎重合（只差 0.5/1 设计像素），距离差
+        //      小于浮点有效位，排序结果不稳定：阴影一旦被排到墨之后，那 22% 的
+        //      黑就均匀盖在整个字身上 —— 正是「字发灰、不是纯色」的观感。
+        //      （0.22 黑压白字 = 255×0.78 ≈ 199，与实测中性灰吻合。）
+        // 修法两条一起用（照搬 1.20.1 已验证版本）：阴影改到最前（先垫在背景上，
+        // 之后被加色晕照亮、被墨盖住中间），并且每字立即 endBatch —— 强制阴影
+        // 单独成批，不参与墨那批的排序，层序从此确定。
+        //
+        // 合批必须<b>在写阴影之前</b>收掉：阴影与墨共用同一 RenderType，而
+        // BufferSource.getBuffer 在「同类型 + QUADS」时（canConsolidateConsecutiveGeometry
+        // = !connectedPrimitives，javap 核对）是<b>追加进同一批次</b>：
+        //     字 A 的墨格进批（同页 → 不 flush）
+        //  → 字 B 的阴影 getBuffer(同类型) 直接并进 A 那一批
+        //  → 此时才 endBatch，真正吐出去的是 [墨A, 影B] 一批。
+        // 这批 quad 会按距离重排，影B 一旦排到墨A 之后就压暗 A 的字身。
+        int shadowArgb = (int) (((argb >>> 24) & 0xFF) * SHADOW_STRENGTH) << 24;
+        float shLeft = qLeft + SHADOW_OFFSET_PX, shTop = qTop + SHADOW_OFFSET_Y_PX;
+        float shRight = qRight + SHADOW_OFFSET_PX, shBottom = qBottom + SHADOW_OFFSET_Y_PX;
+        RenderType shadowType = currentGlyphType(inkRl);
+        // 关键：先把上一个字挂起的墨批发出去 —— 否则下面的 getBuffer 会并进那一批，
+        // 阴影就跟「上一个字的墨」同批参与 sortOnUpload 重排。
+        if (pendingGlyphPage != null) {
+            buffers.endBatch(currentGlyphType(
+                    ((LyricGlyphAtlasBridge.PageHandle) pendingGlyphPage).resourceLocation()));
+            pendingGlyphPage = null;
+            pendingGlyphCount = 0;
+        }
+        VertexConsumer svc = buffers.getBuffer(shadowType);
+        Matrix4f smat = poseStack.last().pose();
+        putGlyphVertex(svc, smat, shLeft, shTop, cx, cy, cos, sin, s, shadowArgb,
+                cell.x / pageF + halfTexel, cell.y / pageF + halfTexel);
+        putGlyphVertex(svc, smat, shLeft, shBottom, cx, cy, cos, sin, s, shadowArgb,
+                cell.x / pageF + halfTexel, (cell.y + cell.h) / pageF - halfTexel);
+        putGlyphVertex(svc, smat, shRight, shBottom, cx, cy, cos, sin, s, shadowArgb,
+                (cell.x + cell.w) / pageF - halfTexel, (cell.y + cell.h) / pageF - halfTexel);
+        putGlyphVertex(svc, smat, shRight, shTop, cx, cy, cos, sin, s, shadowArgb,
+                (cell.x + cell.w) / pageF - halfTexel, cell.y / pageF + halfTexel);
+        // 立即收批：阴影必须早于晕格上屏，否则加色晕会被这层黑压暗。
+        // 直接按 shadowType 收（此时该批里只有阴影顶点 —— 本字墨格还没进），
+        // 不动 pendingGlyphPage：墨格随后会重新 getBuffer 开一批，
+        // 页切换判定照旧走上面的逻辑。
+        buffers.endBatch(shadowType);
+
+        // 晕格（加色）其次：光叠在阴影上（加色只增不减），把阴影「照亮」成半透暗边。
+        // 墨最后画，盖住阴影与晕的中间部分，只让阴影从字缘外露出一点点。
         if (glowRl != null) {
             float gInv = 1f / glowCell.scale;
             float gLeft = x - glowCell.inkX * gInv;
@@ -365,22 +417,7 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
             buffers.endBatch(currentEffectType(glowRl));
         }
 
-        // 阴影：墨格同格重画、右下偏移、半透明黑（游戏实测字色压暗在加色晕垫底
-        // 下读作重影）—— 同 text 类型挂起合批，画在晕上、被墨盖住，只露右下缘
-        int shadowArgb = (int) (((argb >>> 24) & 0xFF) * SHADOW_STRENGTH) << 24;
-        float shLeft = qLeft + SHADOW_OFFSET_PX, shTop = qTop + SHADOW_OFFSET_Y_PX;
-        float shRight = qRight + SHADOW_OFFSET_PX, shBottom = qBottom + SHADOW_OFFSET_Y_PX;
-        VertexConsumer svc = buffers.getBuffer(currentGlyphType(inkRl));
-        Matrix4f smat = poseStack.last().pose();
-        putGlyphVertex(svc, smat, shLeft, shTop, cx, cy, cos, sin, s, shadowArgb,
-                cell.x / pageF + halfTexel, cell.y / pageF + halfTexel);
-        putGlyphVertex(svc, smat, shLeft, shBottom, cx, cy, cos, sin, s, shadowArgb,
-                cell.x / pageF + halfTexel, (cell.y + cell.h) / pageF - halfTexel);
-        putGlyphVertex(svc, smat, shRight, shBottom, cx, cy, cos, sin, s, shadowArgb,
-                (cell.x + cell.w) / pageF - halfTexel, (cell.y + cell.h) / pageF - halfTexel);
-        putGlyphVertex(svc, smat, shRight, shTop, cx, cy, cos, sin, s, shadowArgb,
-                (cell.x + cell.w) / pageF - halfTexel, cell.y / pageF + halfTexel);
-
+        // 阴影已在晕格之前画完并单独收批（见上），这里只剩墨格本体。
         VertexConsumer vc = buffers.getBuffer(currentGlyphType(inkRl));
         Matrix4f mat = poseStack.last().pose();
         // 四顶点：左上 → 左下 → 右下 → 右上（QUADS 环绕序）
@@ -394,6 +431,21 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
                 (cell.x + cell.w) / pageF - halfTexel, cell.y / pageF + halfTexel);
 
         // 同页合批：这里不再逐字 endBatch —— 页切换/帧尾统一收（见上）。
+        //
+        // ---- 必须重新登记页句柄（幽灵字形的根因）----
+        // 上面写阴影前的那次冲刷把 pendingGlyphPage 置了 null（避免阴影并进上一字的
+        // 墨批参与 sortOnUpload 重排），而本字的墨格是冲刷之后才写入的。若这里不重新
+        // 登记，end() 的 `pendingGlyphPage != null` 门控永远不成立 —— 本帧最后一个字形的
+        // 墨格 quad 留在共享 builder 里没人收，直到原版在歌词渲染窗口之外（手部/GUI 阶段）
+        // 替我们冲出去。那时模型视图与投影早已 pop 回原样，同一个 quad 被另一套矩阵
+        // 重新投影：位置偏离所属行，透视除法变化还会让它看起来更大。症状正是「某行
+        // 最后一个字飘到远处且变大」—— 有翻译副行时副行字形追加在主行之后，中招的
+        // 就是副行末字。
+        if (pendingGlyphPage != cell.page) {
+            pendingGlyphPage = cell.page;
+            pendingGlyphCount = 0;
+        }
+        pendingGlyphCount++;
 
         if (TRACE && !tracedSmooth) {
             tracedSmooth = true;
@@ -508,7 +560,8 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
         float strength = settings != null ? settings.glowStrength : 0f;
         float spread = settings != null ? settings.glowSpread : 1f;
         String key = text + "|" + Integer.toHexString(glowColor & 0xFFFFFF)
-                + "|" + Math.round(strength * 64f) + "|" + Math.round(spread * 16f);
+                + "|" + Math.round(strength * 64f) + "|" + Math.round(spread * 16f)
+                + "|" + LyricGlyphAtlas.fontGeneration();
 
         // 烘/复用：key 变才重烘像素并重灌纹理（尺寸不变时只重传，不重建）。
         int[] px = com.muoniumplayer.core.lyrics3d.RowGlowSprite.bake(
@@ -606,12 +659,24 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
      * 贴图恒定，textSeeThrough 是 shared batch —— 同 RenderType 连续 addVertex
      * 天然累积；记录挂起贴图，切换到另一张时先收批。发射顺序即绘制顺序
      * （深度测试已关），BufferSource 跨类型自动换批保证不串纹理，零视觉变化。
+     *
+     * <h2>收批类型必须与取批类型是同一个对象</h2>
+     * <p>自 {@code ec2e14a0}（特效通道切回 alpha 混合）起，特效口全部改用
+     * {@link #currentGlyphType} 取批，但这里仍按 {@link #currentEffectType} 收 ——
+     * 两者在 1.21.1 返回<b>不同实例</b>（{@code textSeeThrough(rl)} vs 自建的
+     * {@code additiveType(rl)}）。而 {@code BufferSource.endBatch(type)} 就是
+     * {@code startedBuilders.remove(type)}（javap 核对）：键对不上时返回 null，
+     * 这批顶点<b>根本不冲刷</b>，一直挂在 textSeeThrough 的 builder 里，
+     * 直到原版在某个时点（{@code renderDebug} → {@code endLastBatch}，
+     * 1.21.1 字节码 2611–2622）替我们冲出去 —— 那时视图矩阵早已 pop 回原样，
+     * 顶点会带着错误的 ModelViewMat 上屏。</p>
      */
     private ResourceLocation pendingEffectRl;
 
     private void flushEffectBatch(ResourceLocation newRl) {
         if (pendingEffectRl != null && pendingEffectRl != newRl) {
-            buffers.endBatch(currentEffectType(pendingEffectRl));
+            // 与取批同源（见上方类注释）：特效口用 currentGlyphType 取，就必须用它收。
+            buffers.endBatch(currentGlyphType(pendingEffectRl));
         }
         pendingEffectRl = newRl;
     }
@@ -645,12 +710,30 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
      * slot 是行槽位（active 0、淡出行 1 起），各槽独立纹理互不覆盖。
      */
     @Override
+    public boolean supportsGpuTrailCanvas() {
+        return com.muoniumplayer.render.skija.SkijaTrailRenderer.available();
+    }
+
+    @Override
+    public boolean drawGpuTrailCanvas(io.github.humbleui.skija.Picture picture, int w, int h,
+                                      float planeX, float planeY, float planeW, float planeH,
+                                      float alpha, int slot) {
+        return drawTrailCanvas(null, picture, w, h, planeX, planeY, planeW, planeH, alpha, slot);
+    }
+
+    @Override
     public boolean drawTrailCanvas(int[] px, int w, int h,
                                    float planeX, float planeY,
                                    float planeW, float planeH, float alpha,
                                    int slot) {
+        return drawTrailCanvas(px, null, w, h, planeX, planeY, planeW, planeH, alpha, slot);
+    }
+
+    private boolean drawTrailCanvas(int[] px, io.github.humbleui.skija.Picture picture, int w, int h,
+                                    float planeX, float planeY, float planeW, float planeH,
+                                    float alpha, int slot) {
         if (poseStack == null || buffers == null || trailCanvasError
-                || px == null || w <= 0 || h <= 0 || alpha <= 0.01f
+                || (px == null && picture == null) || w <= 0 || h <= 0 || alpha <= 0.01f
                 || slot < 0 || slot >= trailCanvasRl.length) return false;
         ResourceLocation rl = trailCanvasRl[slot];
         TrailTexture tex = trailCanvasTex[slot];
@@ -678,21 +761,28 @@ public final class WorldBillboard implements WorldLyricsRenderer.Host {
                 trailCanvasW[slot] = capW;
                 trailCanvasH[slot] = capH;
             }
-            NativeImage img = tex.getPixels();
-            if (img == null || px.length < w * h) return false;
-            // 共享层已按 NativeImage 内存序（ABGR、直通 alpha）输出 —— 这里是
-            // 纯数组拷贝，不再做每像素换位（拖尾活跃帧像素量几十万~上百万级，
-            // 每帧省一整遍位运算扫描）。整图逐帧全量覆写：尺寸复用时旧径迹必须
-            // 被清掉，透明像素也写 0 —— 留白跳写会残留上一帧拖尾。
-            // 边界钉死 w×h：曾有共享层缓冲大于画布时按 px.length 越界写、
-            // 写坏相邻 native 内存的教训。
-            for (int row = 0, i = 0; row < h; row++) {
-                for (int col = 0; col < w; col++, i++) {
-                    img.setPixelRGBA(col, row, px[i]);
+            if (picture != null) {
+                int glId = tex.getId();
+                if (!com.muoniumplayer.render.skija.SkijaTrailRenderer.render(picture, w, h,
+                        glId, trailCanvasW[slot], trailCanvasH[slot], slot)) return false;
+            } else {
+                NativeImage img = tex.getPixels();
+                if (img == null || px.length < w * h) return false;
+                // 共享层已按 NativeImage 内存序（ABGR、直通 alpha）输出 —— 这里是
+                // 纯数组拷贝，不再做每像素换位（拖尾活跃帧像素量几十万~上百万级，
+                // 每帧省一整遍位运算扫描）。整图逐帧全量覆写：尺寸复用时旧径迹必须
+                // 被清掉，透明像素也写 0 —— 留白跳写会残留上一帧拖尾。
+                // 边界钉死 w×h：曾有共享层缓冲大于画布时按 px.length 越界写、
+                // 写坏相邻 native 内存的教训。
+                for (int row = 0, i = 0; row < h; row++) {
+                    for (int col = 0; col < w; col++, i++) {
+                        img.setPixelRGBA(col, row, px[i]);
+                    }
                 }
+                tex.upload();
             }
-            tex.upload();
         } catch (Throwable t) {
+            if (picture != null) return false;
             trailCanvasError = true;
             trailCanvasErrSlot = slot;
             if (TRACE) System.out.println("[WorldLyrics/trace] 拖尾画布纹理失败，径迹退回 quad 带: " + t);

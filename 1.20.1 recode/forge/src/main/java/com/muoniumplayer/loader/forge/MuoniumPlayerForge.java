@@ -81,6 +81,17 @@ public final class MuoniumPlayerForge {
             // 加载器 id 必须在 init() 之前登记：更新检查按「MC 版本 + 加载器」查清单。
             MuoniumPlayerClient.setLoaderId("forge");
             MuoniumPlayerClient.getInstance().init();
+            // ---- MuoniumConfig 接入（与 fabric 侧同一套顺序）----
+            // 把歌词卡 / 信息卡挂进 MuoniumConfig 的 HUD 编辑器（没装就静默跳过）。
+            // 时机必须在这里：HudConfig 已在 init() 里 load 过，字段有值；
+            // 再晚到进世界之后注册，首帧的 HUD 列表会缺这两块。
+            com.muoniumplayer.core.screens.hud.MuoniumHudProviders.registerAll();
+            // 「常用」页：必须在 HUD providers 之后 —— 内容依赖 MuoniumConfig 已装载。
+            com.muoniumplayer.core.screens.hud.MuoniumFavorites.register();
+            // 没装 MuoniumConfig 时起一次后台下载，装到 mods/ 下次启动生效。
+            // 带 MC 版本与加载器：装错版本会在启动期崩。
+            com.muoniumplayer.core.screens.hud.MuoniumConfigDownload.ensureDownloaded(
+                    com.muoniumplayer.MuoniumPlayerClient.MC_VERSION, "forge");
         });
     }
 
@@ -117,12 +128,25 @@ public final class MuoniumPlayerForge {
     }
 
     /**
-     * 3D 世界歌词：对应 Fabric 的 {@code WorldRenderEvents.LAST} —— 世界渲染的最后。
-     * 矩阵与 GL 状态由 {@code WorldLyricsBridge.worldRenderEnd()} 自己设（与 Fabric 侧同口径：
-     * 加载器给的矩阵不一致，自算才一致）。
+     * 3D 世界歌词 + 世界声源线框：世界渲染的最后（{@code AFTER_LEVEL}）。
+     *
+     * <h2>为什么这里必须调用 worldRenderEnd()（Forge 歌词消失的根因）</h2>
+     * <p>此前一度只依赖树内 {@code LevelRendererLateStageMixin}（注入
+     * {@code renderLevel} RETURN）。但 <b>Forge 47 的 fmlloader 根本不读
+     * {@code mods.toml} 的 {@code [[mixins]]} 段</b> —— 那是 NeoForge 的语法，
+     * 反编译 fmlloader 全 jar 找不到任何 mixin 相关类/字符串。于是该 mixin
+     * 在 Forge 侧是<b>死代码</b>：没有任何人调用 {@code worldRenderEnd()}，
+     * 3D 歌词整体不显示（Fabric 侧靠 fabric.mod.json 的 "mixins" 字段，
+     * 同一个 mixin 是生效的，所以只有 Forge 出问题）。</p>
+     *
+     * <p>重复绘制由 {@code WorldLyricsBridge.worldRenderEnd()} 的帧内时间戳
+     * 守卫兜住（一帧只放行一次），所以这里与 mixin 并存是安全的：
+     * 哪天 Forge 换了 mixin 加载方式，两边也不会叠两遍加色晕。</p>
      */
     private void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
+        // 3D 世界歌词（矩阵与 GL 状态由 Bridge 自己设；Forge 侧加载器给的矩阵不可信，
+        // 相机旋转自算 —— 与 Fabric 侧同口径）。
         WorldLyricsBridge.worldRenderEnd();
         // 世界声源线框(有音箱才画;内部第一行判空)。
         com.muoniumplayer.compat.mc.SpeakerRenderBridge.render();

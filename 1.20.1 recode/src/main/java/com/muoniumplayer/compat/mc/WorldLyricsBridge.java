@@ -77,14 +77,41 @@ public final class WorldLyricsBridge {
     static volatile WorldLyricsSettings currentSettings;
 
     /**
-     * 世界渲染结束事件入口（Fabric LAST / NeoForge AFTER_LEVEL）。
-     * 由两个加载器的 LAST/AFTER_LEVEL 事件调用，无参数 —— 相机与矩阵自己取。
+     * 「更激进的适配」是否把本帧绘制推迟到 HUD 阶段（光影包激活且开关开着）。
+     * {@code LevelRendererLateStageMixin} 据此让位 —— 光影后处理会把世界阶段的
+     * 绘制二次加工，歌词必须等 Oculus 合成完再画（见 {@link #hudPhaseDraw}）。
+     */
+    public static boolean defersToHudPhase() {
+        return ShaderPackProbe.isActive() && HudConfig.worldLyricsHudDraw;
+    }
+
+    /**
+     * 世界渲染结束入口 —— <b>1.20.1 的唯一调用者是 {@code LevelRendererLateStageMixin}</b>。
+     *
+     * <p>为什么不再挂加载器事件：Fabric 的 {@code WorldRenderEvents.LAST} 注入在
+     * {@code renderChunkDebugInfo}（{@code renderLevel} 内部，javap 核对
+     * fabric-rendering-v1 3.0.9），那时 Fabulous 的半透明目标还没合成回主目标 ——
+     * 水/玻璃会盖住歌词；Forge 的 {@code AFTER_LEVEL} 虽在 {@code renderLevel}
+     * 返回之后，但与 Fabric 不同点位，两加载器观感不一致。树内 mixin 注入
+     * {@code renderLevel} 的 RETURN，是两加载器共同的、也是真正的「最后一刻」，
+     * 用它做单点入口即可，加载器侧不再重复调用（重复会因加色混合叠两遍）。</p>
      */
     public static void worldRenderEnd() {
         if (broken || !HudConfig.worldLyricsEnabled) {
             hudCameraValid = false;
             return;
         }
+        // 帧内只画一次（幂等守卫）。
+        // 1.20.1 Forge 的 mixin 从来没生效过 —— Forge 47 的 fmlloader 不读
+        // mods.toml 的 [[mixins]]（那是 NeoForge 语法，全 jar 无 mixin 相关类），
+        // 所以 LevelRendererLateStageMixin 在 Forge 侧是死代码。加载器事件与
+        // 树内 mixin 必须都能独立把歌词画出来；两处同时到达时靠本守卫去重，
+        // 否则加色晕会叠两遍（同一帧重复 pushBillboard/draw 的全部顶点）。
+        long now = System.nanoTime();
+        if (now - lastRenderEndNanos < 1_000_000L) {
+            return;
+        }
+        lastRenderEndNanos = now;
         // 懒装配（幂等）：加载器外壳忘了调 install() 时（1.20.1 fabric 曾漏），
         // 第一帧世界渲染也会把图集宿主装上 —— 现代化渲染不因接线遗漏而整档失效。
         install();
@@ -199,6 +226,14 @@ public final class WorldLyricsBridge {
     }
 
     // ==================== 更激进的适配：HUD 阶段直画 ====================
+
+    /**
+     * 上次 {@link #worldRenderEnd()} 实际执行的时间戳（纳秒）。
+     * 一帧内只放行一次：树内 mixin 与加载器事件可能同时触发
+     * （Forge 侧 mixin 不生效、Fabric 侧两者都生效），不守卫就会把
+     * 同一帧的全部顶点画两遍 —— 加色晕直接叠成白团。
+     */
+    private static long lastRenderEndNanos;
 
     /** 本帧世界投影矩阵（世界阶段捕获；HUD 阶段恢复用）。 */
     private static final org.joml.Matrix4f hudProjection = new org.joml.Matrix4f();
